@@ -23,3 +23,10 @@ export function review(state,id,reviewer,passed,evidence,maxAttempts=3){
   t.reviewer=reviewer;t.evidence=evidence;
   t.state=passed?'accepted':t.attempts>=(t.attemptLimit??maxAttempts)?'blocked':'queued';
 }
+
+export function failExecution(state,id,token,now){
+ const t=state.tasks.find(t=>t.id===id);
+ if(!t||t.state!=='running'||!token||t.token!==token||!Number.isSafeInteger(now)||t.expiresAt<=now)return false;
+ t.state=t.attempts>=t.attemptLimit?'blocked':'queued';
+ t.failure='execution-error';delete t.token;delete t.worker;delete t.expiresAt;return true;
+}
