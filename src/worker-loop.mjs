@@ -1,7 +1,8 @@
 import {claim,submit} from './leases.mjs';
 import {reserveReview,finishReview,releaseReview} from './review-lease.mjs';
 import {withHeartbeat} from './heartbeat.mjs';
-export async function tick({store,role,worker,reviewer,execute,verify,clock=Date.now,ttl=60000,maxAttempts=3}){
+export async function tick({store,role,worker,reviewer,execute,verify,clock=Date.now,ttl=60000,maxAttempts=3,deadlineMs=300000}){
+ if(!Number.isSafeInteger(deadlineMs)||deadlineMs<1||deadlineMs>3600000)throw Error('invalid deadline');
  if(!worker||!reviewer||worker===reviewer)throw Error('distinct identities required');
  if(typeof execute!=='function'||typeof verify!=='function')throw Error('adapters required');
  let current=await store.transact(s=>reserveReview(s,role,reviewer,clock(),ttl));
@@ -9,7 +10,7 @@ export async function tick({store,role,worker,reviewer,execute,verify,clock=Date
   const task=await store.transact(s=>claim(s,role,worker,clock(),ttl,maxAttempts));
   if(!task)return {state:'idle'};
   let artifact;
-  try{artifact=await withHeartbeat({store,task,owner:worker,clock,ttl,operation:execute});}
+  try{artifact=await withHeartbeat({store,task,owner:worker,clock,ttl,operation:execute,deadlineMs});}
   catch{return {state:'execution-error',id:task.id};}
   current=await store.transact(s=>{
    submit(s,task.id,task.token,artifact,clock());
@@ -18,7 +19,7 @@ export async function tick({store,role,worker,reviewer,execute,verify,clock=Date
   if(!current)return {state:'changed',id:task.id};
  }
  try{
-  const result=await withHeartbeat({store,task:current,owner:reviewer,clock,ttl,review:true,operation:verify});
+  const result=await withHeartbeat({store,task:current,owner:reviewer,clock,ttl,review:true,operation:verify,deadlineMs});
   if(!result||typeof result.passed!=='boolean'||typeof result.evidence!=='string'||!result.evidence.trim())throw Error('invalid verification result');
   return await store.transact(s=>({state:finishReview(s,current.id,current.reviewToken,clock(),result.passed,result.evidence,maxAttempts),id:current.id}));
  }catch(e){

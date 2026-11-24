@@ -1,4 +1,4 @@
 # Execution handoff
-Baseline 66861e4: CI and isolated execution pilot successful (PR runs 45336465655 and 45336465680).
-Current change: token/owner-fenced renewal for execution and review, periodic renewal integrated in worker loop, cooperative AbortSignal on lost lease, tests for expiry, stale reviewers and timer cleanup. New CI pending. Adapter cancellation is cooperative only; no hard deadline or authenticated remote identity yet. G1 remains partial.
-Next: verify CI, implement bounded adapter deadline and durable budget, then evaluate upstream pinned licenses/runtime and actual GitHub delivery. Live model pilot remains unverified. No paid usage, secrets, production or unrelated repository writes. G2-G6 not accepted.
+Baseline 6d7dcf9: four successful CI runs 45348776557,45348776548,45348771473,45348771437.
+Current change: bounded asynchronous adapter wait with abort signal and late-result fencing; persist execution attempt limit on first claim, preserve across restart and configuration changes. Added regression tests. New CI pending. Deadline cannot terminate synchronous or noncooperative underlying work; sandbox/process termination and bounded review retries remain required. G1 partial.
+Next: verify CI; add durable review attempt budget and explicit fenced failure transition, then evaluate upstream pinned licenses/runtime and actual GitHub delivery. Live model pilot unverified. No paid usage, secrets, production or unrelated repository writes. G2-G6 not accepted.
