@@ -1,0 +1,4 @@
+# Execution handoff
+Baseline 9345237: CI success runs 45304979361 and 45304977057.
+This change adds single-host JSON transactions and expiring leases with stale-token rejection. New CI must be verified before claiming acceptance. G1 remains partial: hard-crash lock recovery, directory fsync/platform behavior, authenticated worker identity, unified scheduler API and multi-host storage are not complete.
+Next: inspect current PR head and CI; fix failures; evaluate upstream OpenHands/Symphony/Open SWE using pinned revisions and licensing. Select one actual coding runtime, prove isolated local execution and independent tests on a disposable fixture, then integrate GitHub delivery. Avoid redundant frameworks. No paid provider, secrets, external repository writes or production deployment without authorization. Do not merge unverified changes. No claim of continuous operation before runtime evidence.
