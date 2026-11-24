@@ -13,7 +13,7 @@ try{
  await store.transact(s=>s.tasks.push({id:'pilot',role:'dev',goal,state:'queued',attempts:0}));
  const generate=ollamaGenerator({model:process.env.OLLAMA_MODEL||'qwen3:8b'});
  for(let i=0;i<3;i++){
-  const result=await tick({store,role:'dev',worker:'local-model',reviewer:'trusted-fixture',ttl:180000,execute:()=>propose({source,goal,generate}),verify:t=>verifyPatch({source,artifact:t.artifact,check:c=>c.trim()==='export const port = 8080;'})});
+  const result=await tick({store,role:'dev',worker:'local-model',reviewer:'trusted-fixture',ttl:180000,execute:(_t,signal)=>propose({source,goal,generate,signal}),verify:t=>verifyPatch({source,artifact:t.artifact,check:c=>c.trim()==='export const port = 8080;'})});
   if(result.state==='accepted'){console.log(JSON.stringify(await store.transact(s=>s.tasks.map(({id,state,attempts,evidence})=>({id,state,attempts,evidence})))));process.exitCode=0;break;}
   if(result.state!=='queued'||i===2){console.error('pilot not accepted:',result.state);process.exitCode=1;break;}
  }

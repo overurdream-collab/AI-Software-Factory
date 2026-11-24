@@ -5,9 +5,11 @@ import {tmpdir} from 'node:os';
 // A narrow, non-executing adapter for a single trusted fixture.
 // Model output is data, never a command, path, or executable test.
 export const digest = value => createHash('sha256').update(value).digest('hex');
-export async function propose({source,goal,generate}){
+export async function propose({source,goal,generate,signal}){
  if(typeof source!=='string'||typeof goal!=='string'||typeof generate!=='function')throw Error('invalid input');
- const candidate=await generate({source,goal});
+ signal?.throwIfAborted();
+ const candidate=await generate({source,goal,signal});
+ signal?.throwIfAborted();
  if(typeof candidate!=='string'||!candidate.trim()||Buffer.byteLength(candidate)>65536)throw Error('invalid candidate');
  return JSON.stringify({version:1,base:digest(source),candidate,sha:digest(candidate)});
 }

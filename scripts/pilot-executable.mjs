@@ -9,7 +9,7 @@ const fixtures={a:{source:'console.log(0)',goal:'Print exactly 4 using arithmeti
 try{
  await store.transact(s=>{if(!s.tasks.length)for(const id of Object.keys(fixtures))s.tasks.push({id,role:'dev',state:'queued',attempts:0});});
  const generate=ollamaGenerator({model:process.env.OLLAMA_MODEL||'qwen3:8b'});
- const workers=['one','two'].map(id=>({role:'dev',worker:id,reviewer:'verify-'+id,ttl:180000,execute:t=>propose({...fixtures[t.id],generate}),verify:t=>verifyExecutable({...fixtures[t.id],artifact:t.artifact})}));
+ const workers=['one','two'].map(id=>({role:'dev',worker:id,reviewer:'verify-'+id,ttl:180000,execute:(t,signal)=>propose({...fixtures[t.id],generate,signal}),verify:(t,signal)=>verifyExecutable({...fixtures[t.id],artifact:t.artifact,signal})}));
  for(let i=0;i<6;i++){
   const result=await runRound({store,workers,maxParallel:2});
   console.log(JSON.stringify(result));
