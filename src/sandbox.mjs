@@ -28,6 +28,7 @@ export async function verifyExecutable({source,artifact,expected,timeoutMs=15000
  if(typeof source!=='string'||typeof expected!=='string'||!Number.isInteger(timeoutMs)||timeoutMs<100||timeoutMs>30000)throw Error('invalid verifier input');
  const p=JSON.parse(artifact);
  if(p.version!==1||p.base!==digest(source)||typeof p.candidate!=='string'||Buffer.byteLength(p.candidate)>65536||p.sha!==digest(p.candidate))throw Error('invalid artifact');
+ signal?.throwIfAborted();
  const name='factory-'+randomUUID();
  const args=['run','--rm','-i','--name',name,'--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--user=65534:65534','--pids-limit=32','--memory=128m','--memory-swap=128m','--cpus=0.5','--tmpfs','/tmp:rw,noexec,nosuid,size=8m','node:22-alpine','node','--input-type=module','-'];
  try{
