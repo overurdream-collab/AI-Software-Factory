@@ -50,8 +50,8 @@ export function createProjectRunner({store,taskId,attemptId,leaseToken,owner,clo
  if(!store||![taskId,attemptId,leaseToken,owner].every(x=>typeof x==='string'&&x.length)||
  !/^sha256:[a-f0-9]{64}$/.test(imageDigest))throw Error('invalid runner identity or image digest');
  return async function runProject({workspace,commands,signal,limits}){
-  const {realpath,lstat}=await import('node:fs/promises');
-  const {isAbsolute}=await import('node:path');
+  const {realpath,lstat,readdir}=await import('node:fs/promises');
+  const {isAbsolute,join}=await import('node:path');
   const {timeoutMs,memoryMb,cpus,pids,maxOutputBytes}=limits;
   if(![timeoutMs,memoryMb,pids,maxOutputBytes].every(Number.isSafeInteger)||
  timeoutMs<100||timeoutMs>3600000||memoryMb<64||memoryMb>2048||pids<8||pids>256||
@@ -64,6 +64,16 @@ export function createProjectRunner({store,taskId,attemptId,leaseToken,owner,clo
   if(typeof workspace!=='string'||!isAbsolute(workspace)||(await lstat(workspace)).isSymbolicLink())throw Error('invalid workspace');
   const root=await realpath(workspace);
   if(root.includes(','))throw Error('unsupported workspace path');
+  // B passes a sanitized staging tree, never its private Git checkout.
+  let files=0,bytes=0;
+  async function check(dir){for(const entry of await readdir(dir,{withFileTypes:true})){
+   signal?.throwIfAborted();const n=entry.name;
+   if(/^(?:\.git|\.env(?:\.|$)|\.npmrc|\.netrc|id_rsa|id_ed25519|credentials(?:\.|$))/i.test(n)||/\.(?:pem|key|p12|pfx)$/i.test(n))throw Error('unsafe workspace entry');
+   const p=join(dir,n),st=await lstat(p);
+   if(++files>4000||st.isSymbolicLink()||(!st.isDirectory()&&!st.isFile()))throw Error('unsafe workspace tree');
+   if(st.isDirectory())await check(p);else if((bytes+=st.size)>32*1024*1024)throw Error('workspace size limit');
+  }}
+  await check(root);
   const api=resourceApi??await import('./attempt-store.mjs');
   const id=randomUUID(),name='factory-project-'+id;
   const resource={id,taskId,attemptId,leaseToken,owner,kind:'docker',name,createdAt:clock()};
@@ -72,26 +82,32 @@ export function createProjectRunner({store,taskId,attemptId,leaseToken,owner,clo
   const requireOk=async(args)=>{const x=await call(args);if(x.code!==0)throw Error('Docker setup failed');return x;};
   signal?.throwIfAborted();
   await store.transact(s=>api.recordResource(s,resource));
+  let containerId;
   try{
-   await requireOk(['create','--name',name,'--label','factory.runtime=project-v1','--label','factory.task='+taskId,'--label','factory.attempt='+attemptId,
+   const created=await requireOk(['create','--name',name,'--label','factory.runtime=project-v1','--label','factory.task='+taskId,'--label','factory.attempt='+attemptId,
     '--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--user=65534:65534',
     '--pids-limit='+pids,'--memory='+memoryMb+'m','--memory-swap='+memoryMb+'m','--cpus='+cpus,
     '--tmpfs','/tmp:rw,nosuid,nodev,size=32m','--mount','type=bind,source='+root+',target=/workspace,readonly',
-    '--tmpfs','/work:rw,nosuid,nodev,size=256m','node@'+imageDigest,'node','-e','setInterval(()=>{},1000)']);
-   await requireOk(['start',name]);
-   await requireOk(['exec',name,'cp','-R','/workspace/.','/work/']);
+    '--tmpfs','/work:rw,nosuid,nodev,size=256m,mode=1777','node@'+imageDigest,'node','-e','setInterval(()=>{},1000)']);
+   containerId=created.stdout.trim();
+   if(!/^[a-f0-9]{64}$/.test(containerId)){containerId=undefined;throw Error('invalid container identity');}
+   await requireOk(['start',containerId]);
+   await requireOk(['exec',containerId,'cp','-R','/workspace/.','/work/']);
    const results=[];
    for(const c of commands){
     signal?.throwIfAborted();
     if(Date.now()>=deadline)throw Error('project deadline exceeded');
-    const x=await call(['exec','--workdir','/work/'+c.cwd,name,...c.argv]);
+    const x=await call(['exec','--workdir','/work/'+c.cwd,containerId,...c.argv]);
     results.push({argv:c.argv,cwd:c.cwd,exitCode:x.code,stdout:x.stdout,stderr:x.stderr});
    }
    return {commands:results,runtime:'docker',imageDigest};
   }finally{
-   const x=await call(['rm','-f',name],true);
-   if(x.code!==0&&!x.stderr.includes('No such container'))throw Error('project cleanup failed');
-   await store.transact(s=>api.markResourceCleaned(s,id,clock()));
+   // Creation without a returned ID is ambiguous: leave durable registration for reconciliation.
+   if(containerId){
+    const x=await call(['rm','-f',containerId],true);
+    if(x.code!==0&&!x.stderr.includes('No such container'))throw Error('project cleanup failed');
+    await store.transact(s=>api.markResourceCleaned(s,id,clock()));
+   }
   }
  };
 }
