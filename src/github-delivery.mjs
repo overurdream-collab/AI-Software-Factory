@@ -14,9 +14,11 @@ export async function deliver({spec,artifact,approval,remote,prepare,baseBranch,
   const checkBase=async()=>{if(await remote.ref(repository,baseBranch)!==spec.baseCommit) throw Error('base changed');};
   await checkBase();
   let head=await remote.ref(repository,branch);
+  if(!head)await assertLease();
   const candidate=head?null:await prepare(spec,artifact);
   if(candidate && (candidate.tree!==artifact.candidateTree || !oid(candidate.sha) || candidate.parent!==spec.baseCommit)) throw Error('prepared commit mismatch');
   if(!head){ await assertLease(); await checkBase(); try{await remote.push(request,candidate);}catch(err){if(!await remote.ref(repository,branch))throw err;} head=await remote.ref(repository,branch); }
+  if(!oid(head))throw Error('missing remote head');
   const commit=await remote.commit(repository,head);
   if(commit.tree!==artifact.candidateTree||commit.parent!==spec.baseCommit)throw Error('remote commit mismatch');
   let prs=await remote.findPRs(request);
@@ -129,7 +131,7 @@ export async function deliverDurable({store,deliveryApi,taskId,owner,ttlMs=12000
   const key=deliveryKey(spec),existing=getDelivery(state,key);
   if(existing?.state==='delivered')return {existing};
   const lease=reserveDelivery(state,key,owner,clock(),ttlMs);
-  return {spec,artifact,approval,key,lease,existing};
+  return {spec,artifact,approval,key,lease,existing,artifactDigest:hash(task.artifact)};
  });
  if(!initial.lease)return initial.existing??null;
  const {spec,artifact,approval,key,lease}=initial;
@@ -137,7 +139,7 @@ export async function deliverDurable({store,deliveryApi,taskId,owner,ttlMs=12000
   const d=getDelivery(state,key);
   if(d?.state!=='delivering'||d.token!==lease.token||d.expiresAt<=clock())throw Error('stale delivery lease');
   const t=state.tasks.find(t=>t.id===taskId);
-  if(t?.state!=='accepted'||hash(t.artifact)!==hash(JSON.stringify(artifact)))throw Error('accepted artifact changed');
+  if(t?.state!=='accepted'||hash(t.artifact)!==initial.artifactDigest)throw Error('accepted artifact changed');
  });
  let result;
  try{result=await deliver({spec,artifact,approval,remote,prepare,baseBranch,requiredChecks,allowlist,assertLease});}
@@ -173,4 +175,20 @@ export function githubAppTokenProvider({appId,installationId,privateKey,allowlis
   if(!pending.has(repository))pending.set(repository,mint(repository).finally(()=>pending.delete(repository)));
   return pending.get(repository);
  };
+}
+
+/** Trusted host bootstrap. No fallback to ambient Actions token. */
+export async function githubRemoteFromEnvironment({allowlist,env=process.env,fetchImpl=fetch,clock=Date.now,readKey}){
+ const appId=env.FACTORY_GITHUB_APP_ID,installationId=env.FACTORY_GITHUB_INSTALLATION_ID;
+ const keyFile=env.FACTORY_GITHUB_PRIVATE_KEY_FILE,key=env.FACTORY_GITHUB_PRIVATE_KEY;
+ if(!appId||!installationId||Boolean(keyFile)===Boolean(key))throw Error('configure GitHub App IDs and exactly one private key source');
+ const privateKey=key??await (readKey??(await import('node:fs/promises')).readFile)(keyFile);
+ const tokenProvider=githubAppTokenProvider({appId,installationId,privateKey,allowlist,fetchImpl,clock});
+ const remote=githubRemote({tokenProvider,allowlist,fetchImpl});
+ return {remote,preflight:async(repository,baseBranch)=>{
+  await tokenProvider(repository);
+  const baseCommit=await remote.ref(repository,baseBranch);
+  if(!oid(baseCommit))throw Error('GitHub App cannot read authorized base');
+  return {repository,baseBranch,baseCommit,authentication:'github-app',writeVerified:false};
+ }};
 }
