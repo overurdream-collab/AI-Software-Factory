@@ -33,3 +33,34 @@ export async function createWorkspace({root,repositoryPath,baseCommit,signal}){
   return {workspace,cleanup:()=>rm(workspace,{recursive:true,force:true})};
  }catch(e){await rm(workspace,{recursive:true,force:true});throw e;}
 }
+
+// Export only tracked regular files into a disposable, read-only-mount staging directory.
+// Keep the private Git checkout and its metadata outside the container.
+export async function stageProject(workspace,signal){
+ const {mkdir,chmod,copyFile}=await import('node:fs/promises');
+ const {dirname}=await import('node:path');
+ const parent=await realpath(dirname(workspace));
+ const stage=await mkdtemp(join(parent,'sandbox-'));
+ try{
+  const entries=(await git(workspace,['ls-files','--stage','-z'],signal)).split('\0').filter(Boolean);
+  if(!entries.length||entries.length>2000)throw Error('invalid pilot tree size');
+  let bytes=0;
+  for(const entry of entries){
+   signal?.throwIfAborted();
+   const match=/^(100644|100755) [a-f0-9]{40} 0\t([a-zA-Z0-9_./-]+)$/.exec(entry);
+   if(!match)throw Error('unsupported staged file');
+   const p=match[2];
+   if(p.split('/').some(s=>!s||s==='.'||s==='..'||s.toLowerCase()==='.git'||/^\.env(?:\.|$)/i.test(s)||/^(?:id_rsa|id_ed25519|credentials(?:\.|$)|\.npmrc|\.netrc)$/i.test(s))||/\.(pem|key|p12|pfx)$/i.test(p))throw Error('unsafe staged path');
+   let from=workspace;
+   for(const part of p.split('/')){from=join(from,part);if((await lstat(from)).isSymbolicLink())throw Error('staging symlink');}
+   const st=await lstat(from);if(!st.isFile()||!(await realpath(from)).startsWith(workspace+sep))throw Error('invalid staged file');
+   bytes+=st.size;if(bytes>32*1024*1024)throw Error('staging size limit');
+   const target=join(stage,p);
+   await mkdir(dirname(target),{recursive:true,mode:0o755});
+   await copyFile(from,target);
+   await chmod(target,match[1]==='100755'?0o755:0o644);
+  }
+  await chmod(stage,0o755);
+  return {workspace:stage,cleanup:()=>rm(stage,{recursive:true,force:true})};
+ }catch(error){await rm(stage,{recursive:true,force:true});throw error;}
+}
