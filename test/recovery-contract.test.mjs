@@ -55,3 +55,33 @@ test('C issue identifier preserves original identity and dependency graph',()=>{
  assert.equal(claim(s,'dev','other',15,10).id,second.id);
  assert.throws(()=>enqueueSpec(s,{...spec,id:'other/repo#9'}));
 });
+
+test('delivery failure is archived on retry and never leaks into delivered status',()=>{
+ const s={tasks:[]},key='owner/repo:history',sha='c'.repeat(40);
+ const a=reserveDelivery(s,key,'one',10,10);
+ finishDelivery(s,key,a.token,11,{state:'pending',failure:'CI pending',branch:'factory/history'});
+ assert.equal(getDelivery(s,key).failure,'CI pending');
+ const b=reserveDelivery(s,key,'two',12,10);
+ assert.equal(Object.hasOwn(getDelivery(s,key),'failure'),false);
+ assert.deepEqual(getDelivery(s,key).failureHistory,[{reason:'CI pending',at:11,state:'pending'}]);
+ const c=reserveDelivery(s,key,'three',22,10);
+ assert.throws(()=>finishDelivery(s,key,b.token,23,{state:'pending',failure:'stale'}));
+ finishDelivery(s,key,c.token,23,{state:'pending',failure:'network error'});
+ const d=reserveDelivery(s,key,'four',24,10);
+ const result={state:'delivered',commitSha:sha,checkedCommit:sha,prNumber:7,prUrl:'https://github.com/owner/repo/pull/7',checkRunIds:[1]};
+ assert.throws(()=>finishDelivery(s,key,d.token,25,{...result,failure:'contradiction'}));
+ finishDelivery(s,key,d.token,25,result);
+ const done=getDelivery(s,key);
+ assert.equal(done.state,'delivered');
+ assert.equal(Object.hasOwn(done,'failure'),false);
+ assert.equal(Object.hasOwn(done,'failureAt'),false);
+ assert.deepEqual(done.failureHistory.map(x=>x.reason),['CI pending','delivery-lease-expired','network error']);
+ assert.equal(done.branch,'factory/history');
+});
+test('legacy delivered snapshots hide obsolete failure without losing its reason',()=>{
+ const s={tasks:[],deliveries:[{key:'legacy',state:'delivered',failure:'old failure'}]};
+ const d=getDelivery(s,'legacy');
+ assert.equal(Object.hasOwn(d,'failure'),false);
+ assert.deepEqual(d.failureHistory,[{reason:'old failure',at:null,state:'delivered'}]);
+ assert.equal(s.deliveries[0].failure,'old failure');
+});
