@@ -12,3 +12,33 @@ Validation:
 - F must additionally verify real project runner, positive network control, SIGKILL/restart, live versus orphan versus foreign containers, and 24-hour hosted fault injection.
 
 Current limitations: Docker unavailable in local execution environment; direct git DNS failed. No hosted runtime or authorized external pilot. D resource API integration, writable tmpfs permissions, late-create reconciliation, hard cancellation and positive network control require verification. No G5 or P4 acceptance claimed.
+
+## Cross-agent verification and host entrypoint
+D integration test pins 8455755657270229ca2db01e32b8f9f764231efb in a separate detached worktree. The Docker CI suite now includes actual project command execution, SQLite leases, SIGKILL of the runner, reopening the database, actual lease expiration, cleanup with live and unrelated container controls, and a replacement attempt. Check the exact revision's CI results; test code is not evidence by itself.
+Positive network control passed on E revision 49130f9f7d8c7da20d76738d3c43baf219f62e9d, run 45540849644 (3 pass, 0 fail, 0 skipped).
+
+Run the service on an authorized dedicated Linux host:
+```sh
+FACTORY_RUNTIME_CONFIG=/etc/factory/runtime.mjs FACTORY_PROGRESS_PATH=/var/lib/factory/status.json node scripts/daemon.mjs
+```
+The operator config must export createRuntime({signal}) returning store, workers, resourceApi, optional close(), and daemon settings. Keep config and database outside project trees. The operator supplies approved tasks and providers. Example systemd service (adjust to actual host and trusted service account; Docker access is effectively root-level):
+```ini
+[Unit]
+Description=AI Software Factory runtime
+After=docker.service
+Requires=docker.service
+[Service]
+Type=simple
+User=factory
+WorkingDirectory=/opt/factory
+Environment=FACTORY_RUNTIME_CONFIG=/etc/factory/runtime.mjs
+Environment=FACTORY_PROGRESS_PATH=/var/lib/factory/status.json
+ExecStart=/usr/bin/node /opt/factory/scripts/daemon.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=40
+KillMode=control-group
+[Install]
+WantedBy=multi-user.target
+```
+The status file represents round liveness only, not accepted-task progress. Compare durable attempts, command evidence and completed deliveries against actual time. For the 24h acceptance run, retain start/end UTC, host identity, exact commit, image digest, per-task attempts, fault injection timestamps, cleanup results, recovery times, and independently verified task results. Use only disposable authorized fixtures. Service definition is not installed or running on a persistent host; no 24h proof exists yet. A bounded CI runner is not a permanent host.
