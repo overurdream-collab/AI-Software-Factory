@@ -17,9 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      P2_STATE_DIR: ${{ runner.temp }}/factory-p2-state
       OLLAMA_NO_CLOUD: '1'
     steps:
+      - name: Initialize durable checkpoint directory
+        run: echo "P2_STATE_DIR=$RUNNER_TEMP/factory-p2-state" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
