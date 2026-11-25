@@ -21,7 +21,8 @@ test('resource reclaim respects live review lease and rejects stale registration
  const q={...r,id:'r2',name:'factory-r2',leaseToken:v.reviewToken,owner:'qa',createdAt:15};
  recordResource(s,q);
  assert.deepEqual(listReclaimableResources(s,21).map(x=>x.id),['r1']);
- assert.throws(()=>markResourceCleaned(s,'r2',21));
+ const q2={...q,id:'r4',name:'factory-r4'};recordResource(s,q2);
+ markResourceCleaned(s,'r4',21);assert.equal(s.resources.find(x=>x.id==='r4').cleanedAt,21);
  markResourceCleaned(s,'r1',21);
  assert.throws(()=>recordResource(s,{...r,id:'r3',name:'factory-r3',createdAt:21}));
  finishReview(s,'a',v.reviewToken,22,true,'verified');
@@ -40,4 +41,17 @@ test('delivery lease fencing preserves known remote identifiers across retries',
  finishDelivery(s,key,c.token,24,{state:'delivered',commitSha:sha,checkedCommit:sha,prNumber:7,prUrl:'https://github.com/owner/repo/pull/7',checkRunIds:[1]});
  assert.equal(reserveDelivery(s,key,'four',25,10),null);
  assert.equal(getDelivery(s,key).state,'delivered');
+});
+
+test('C issue identifier preserves original identity and dependency graph',()=>{
+ const s={tasks:[]};const first={...spec,id:'owner/repo#7'};
+ const second={...spec,id:'owner/repo#8',deps:[first.id]};
+ assert.equal(enqueueSpec(s,first),1);assert.equal(enqueueSpec(s,second),1);
+ assert.equal(enqueueSpec(s,first),0);
+ const t=claim(s,'dev','worker',10,10);assert.equal(t.id,first.id);
+ assert.equal(claim(s,'dev','other',11,10),null);
+ submit(s,t.id,t.token,'patch',12);const v=reserveReview(s,'dev','qa',13,10);
+ finishReview(s,t.id,v.reviewToken,14,true,'verified');
+ assert.equal(claim(s,'dev','other',15,10).id,second.id);
+ assert.throws(()=>enqueueSpec(s,{...spec,id:'other/repo#9'}));
 });
