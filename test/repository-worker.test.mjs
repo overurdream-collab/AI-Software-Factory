@@ -35,3 +35,24 @@ test('reject tracked symlink and wrong base',async t=>{const {args,repo,root}=aw
 test('reject passing baseline and incomplete runner response',async t=>{const {args}=await fixture(t);args.runProject=async({commands})=>({commands:commands.map(c=>({...c,exitCode:0}))});await assert.rejects(repairRepository(args),/baseline did not/);args.runProject=async()=>({commands:[]});await assert.rejects(repairRepository(args),/incomplete/);});
 test('bounded retries and cleanup',async t=>{const {args,root}=await fixture(t);let n=0;args.generate=async()=> 'export const add=(a,b)=>a-b+'+(++n)+';\n';await assert.rejects(repairRepository(args),/exhausted/);assert.equal(n,2);assert.deepEqual(await readdir(root),[]);});
 test('reject runner mutation and pre-abort',async t=>{const {args,root}=await fixture(t);const run=args.runProject;args.runProject=async x=>{const r=await run(x);await writeFile(join(x.workspace,'math.test.mjs'),'');return r;};await assert.rejects(repairRepository(args),/changed baseline/);await assert.rejects(repairRepository({...args,signal:AbortSignal.abort()}));assert.deepEqual(await readdir(root),[]);});
+
+test('live staging rejects symlinks, exports tracked source and tests only',async t=>{
+ const {repo,root,args}=await fixture(t);
+ const {stageProject}=await import('../src/workspace.mjs');
+ const w=await createWorkspace({root,repositoryPath:repo,baseCommit:args.spec.baseCommit});
+ try{
+  await assert.rejects(stageProject(w.workspace),/unsupported staged file/);
+  await git(w.workspace,['rm','alias.mjs']);
+  await writeFile(join(w.workspace,'untracked-secret'),'not exported');
+  const s=await stageProject(w.workspace);
+  try{
+   assert.deepEqual((await readdir(s.workspace)).sort(),['math.mjs','math.test.mjs']);
+   assert.match(await readFile(join(s.workspace,'math.mjs'),'utf8'),/a-b/);
+  }finally{await s.cleanup();}
+ }finally{await w.cleanup();}
+ assert.deepEqual(await readdir(root),[]);
+});
+test('live adapter rejects unapproved repository before invoking provider or runner',async()=>{
+ const {executeLiveRepository}=await import('../src/repository-worker.mjs');
+ await assert.rejects(executeLiveRepository({spec:{repository:'local/fixture'},approvedRepositories:[],store:{transact(){throw Error('must not access store');}}}),/authorization/);
+});
