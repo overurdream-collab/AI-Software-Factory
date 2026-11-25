@@ -68,7 +68,7 @@ export function createProjectRunner({store,taskId,attemptId,leaseToken,owner,clo
   let files=0,bytes=0;
   async function check(dir){for(const entry of await readdir(dir,{withFileTypes:true})){
    signal?.throwIfAborted();const n=entry.name;
-   if(/^(?:\.git|\.env(?:\.|$)|\.npmrc|\.netrc|id_rsa|id_ed25519|credentials(?:\.|$))/i.test(n)||/\.(?:pem|key|p12|pfx)$/i.test(n))throw Error('unsafe workspace entry');
+   if(/^(?:\.git$|\.env(?:\.|$)|\.npmrc|\.netrc|id_rsa|id_ed25519|credentials(?:\.|$))/i.test(n)||/\.(?:pem|key|p12|pfx)$/i.test(n))throw Error('unsafe workspace entry');
    const p=join(dir,n),st=await lstat(p);
    if(++files>4000||st.isSymbolicLink()||(!st.isDirectory()&&!st.isFile()))throw Error('unsafe workspace tree');
    if(st.isDirectory())await check(p);else if((bytes+=st.size)>32*1024*1024)throw Error('workspace size limit');
