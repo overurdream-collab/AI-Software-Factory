@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync} from 'node:crypto';
-import {deliver,deliverDurable,githubRemote,githubAppTokenProvider} from '../src/github-delivery.mjs';
+import {deliver,deliverDurable,githubRemote,githubAppTokenProvider,githubRemoteFromEnvironment} from '../src/github-delivery.mjs';
 import {intakeIssue} from '../src/github-intake.mjs';
 function fixture(){
  const base='a'.repeat(40),tree='b'.repeat(40),sha='c'.repeat(40),repository='owner/repo';
@@ -53,4 +53,19 @@ test('App token is scoped, cached and renewed; unauthorized repository never cal
 test('403 reports missing permission without exposing token or response body',async()=>{
  const remote=githubRemote({tokenProvider:async()=> 'secret-test-token',allowlist:['owner/repo'],fetchImpl:async()=>({ok:false,status:403,headers:{get:()=> 'pull_requests=write'}})});
  await assert.rejects(remote.createPR({repository:'owner/repo',branch:'factory/test',baseBranch:'main'}),e=>e.status===403&&e.requiredPermissions==='pull_requests=write'&&!e.message.includes('secret-test-token'));
+});
+
+test('host bootstrap rejects missing or ambiguous credentials without network',async()=>{
+ const args={allowlist:['owner/repo'],fetchImpl:async()=>{throw Error('unexpected network');}};
+ await assert.rejects(githubRemoteFromEnvironment({...args,env:{GITHUB_TOKEN:'ambient'}}),/configure GitHub App/);
+ await assert.rejects(githubRemoteFromEnvironment({...args,env:{FACTORY_GITHUB_APP_ID:'1',FACTORY_GITHUB_INSTALLATION_ID:'2',FACTORY_GITHUB_PRIVATE_KEY:'x',FACTORY_GITHUB_PRIVATE_KEY_FILE:'y'}}),/exactly one/);
+});
+test('host preflight reads authorized base but never claims write verification',async()=>{
+ const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+ const now=1700000000000,base='a'.repeat(40),calls=[];
+ const {preflight}=await githubRemoteFromEnvironment({allowlist:['owner/repo'],clock:()=>now,env:{FACTORY_GITHUB_APP_ID:'1',FACTORY_GITHUB_INSTALLATION_ID:'2',FACTORY_GITHUB_PRIVATE_KEY_FILE:'trusted.pem'},readKey:async()=>privateKey,fetchImpl:async(url,opts)=>{
+ calls.push([url,opts.method]);if(url.endsWith('/access_tokens'))return {ok:true,json:async()=>({token:'fake',expires_at:new Date(now+3600000).toISOString(),permissions:JSON.parse(opts.body).permissions,repositories:[{full_name:'owner/repo'}]})};
+ return {ok:true,json:async()=>({object:{sha:base}})};
+ }});
+ const result=await preflight('owner/repo','main');assert.equal(result.baseCommit,base);assert.equal(result.writeVerified,false);assert.deepEqual(calls.map(x=>x[1]),['POST','GET']);
 });
