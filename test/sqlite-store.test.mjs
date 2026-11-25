@@ -33,3 +33,18 @@ test('rollback on callback failure',async()=>{
   assert.deepEqual(await store.transact(s=>s.tasks),[]);
  }finally{store.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('legacy delivery failure migration survives database reopen without duplication',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'factory-delivery-migration-'));
+ const path=join(dir,'state.db');let store=new SQLiteStore(path);
+ try{
+  await store.transact(s=>{s.deliveries=[{key:'legacy',state:'delivered',failure:'previous CI error',prNumber:7}];});
+  store.close();store=new SQLiteStore(path);
+  const d=await store.transact(s=>structuredClone(s.deliveries[0]));
+  assert.equal(d.state,'delivered');assert.equal(d.prNumber,7);
+  assert.equal(Object.hasOwn(d,'failure'),false);
+  assert.deepEqual(d.failureHistory,[{reason:'previous CI error',at:null,state:'delivered'}]);
+  store.close();store=new SQLiteStore(path);
+  assert.deepEqual(await store.transact(s=>s.deliveries[0]),d);
+ }finally{store.close();await rm(dir,{recursive:true,force:true});}
+});
