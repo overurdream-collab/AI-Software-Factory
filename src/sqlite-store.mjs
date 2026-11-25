@@ -1,3 +1,4 @@
+import {normalizeDeliveryFailures} from './attempt-store.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
@@ -16,6 +17,7 @@ export class SQLiteStore {
   try{
    const state=JSON.parse(this.db.prepare('SELECT payload FROM factory_state WHERE id=1').get().payload);
    if(state.version!==1||!Array.isArray(state.tasks))throw Error('invalid state');
+   normalizeDeliveryFailures(state);
    const result=fn(state);
    if(result&&typeof result.then==='function')throw Error('transaction callback must be synchronous');
    this.db.prepare('UPDATE factory_state SET payload=? WHERE id=1').run(JSON.stringify(state));
