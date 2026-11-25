@@ -20,7 +20,7 @@ const repositoryPath = resolve('.');
 const stateRoot = resolve(process.env.P2_STATE_DIR || '/tmp/factory-p2-state');
 const root = join(stateRoot, 'work');
 const phase = process.argv[2];
-const model = 'qwen2.5-coder:0.5b';
+const model = 'qwen2.5-coder:1.5b';
 const verifier = 'p2-independent-F';
 const checkName = 'Factory live pilot acceptance';
 const runnerLimits = {timeoutMs: 60000, memoryMb: 256, cpus: 1, pids: 64, maxOutputBytes: 262144};
@@ -82,7 +82,7 @@ if (phase === 'repair') {
     assert.ok(installed?.digest,'actual installed model digest required');
     const spec = {version:1,id:'p2-live-'+baseCommit.slice(0,12),role:'dev',deps:[],
       repository,baseCommit,allowedPaths:['fixtures/p2-clamp/clamp.mjs'],testPlanId:'p2-clamp-v1',
-      goal:'Fix clamp(value, lower, upper) so it returns lower when value is below lower, upper when above upper, and value otherwise. Preserve the named ES module export clamp. Return only the complete revised JavaScript source. Do not change tests or create other files.',
+      goal:'The current clamp implementation ignores the lower bound. Fix clamp(value, lower, upper) to enforce BOTH bounds: return lower below the lower bound, upper above the upper bound, and the original value inside the interval. Preserve the named ES module export clamp. Return only the complete revised JavaScript source. Do not change tests or create other files.',
       limits:{maxAttempts:2,maxReviewAttempts:4,deadlineMs:300000,maxPatchBytes:16384}};
     context = {version:1,spec,baseBranch,imageDigest,model,providerObservation:{
       serverVersion:version.version,modelDigest:installed.digest,observedAt:new Date().toISOString()},

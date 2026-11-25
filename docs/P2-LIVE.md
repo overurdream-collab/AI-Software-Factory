@@ -12,7 +12,7 @@ Pinned inputs:
 
 The fixture fixtures/p2-clamp/clamp.mjs deliberately misses the lower bound. F owns seven varied checks; the model receives only the buggy source and a behavioral goal, never the expected revised source or test contents.
 
-P2 live factory pilot runs only on explicitly named coordination integration branches. It uses a dedicated ephemeral GitHub runner because the interactive workspace cannot access the Docker socket. The runner installs Ollama v0.40.18 after checking the release archive SHA-256, pulls qwen2.5-coder:0.5b locally with cloud inference disabled, and pins the Docker image by its observed digest.
+P2 live factory pilot runs only on explicitly named coordination integration branches. It uses a dedicated ephemeral GitHub runner because the interactive workspace cannot access the Docker socket. The runner installs Ollama v0.40.18 after checking the release archive SHA-256, pulls qwen2.5-coder:1.5b locally with cloud inference disabled, and pins the Docker image by its observed digest. The initial 0.5b trial failed with an invalid candidate and was not accepted or delivered; the larger model is evaluated against the same independent tests.
 
 scripts/p2-live.mjs repair executes A/B/E under D leases, then F independently reapplies and validates the patch and tests in a new Docker sandbox. It closes SQLite. A separate process, scripts/p2-live.mjs deliver, reopens the database and checks the artifact identity before C delivery. It then fetches the actual PR head, has F verify that exact commit under a separate valid audit lease, publishes a commit-bound check run, and lets C reconcile the same PR to delivered. Replay must return the same PR and commit.
 

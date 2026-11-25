@@ -59,7 +59,7 @@ jobs:
             sleep 1
           done
           curl --fail --silent http://127.0.0.1:11434/api/version
-          "$RUNNER_TEMP/ollama/bin/ollama" pull qwen2.5-coder:0.5b
+          "$RUNNER_TEMP/ollama/bin/ollama" pull qwen2.5-coder:1.5b
       - name: Restore pinned image for checkpoint replay
         if: github.run_attempt > 1
         run: |
