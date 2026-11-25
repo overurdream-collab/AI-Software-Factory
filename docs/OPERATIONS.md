@@ -45,3 +45,66 @@ The status file represents round liveness only, not accepted-task progress. Comp
 
 ## Parallel worker acceptance fixture
 Revision 7528504c4ac7ad108e8ab814371d1e184d4098bb adds two independent Node OS processes sharing D SQLite, with separate Git fixture repos and B workspaces, E Docker runners, baseline assertion failures and corrected candidate commands. B pinned at 0c5afeda7bd768f939cb061ab45d81e595a43303; D pinned at e261a5617422251c7420024da2db81a96c6ad9c1. The trusted test commands emit actual in-container start/end UTC epoch milliseconds; the test requires positive overlap and validates both patches on pristine repos, distinct PIDs/attempts/workspaces, and cleanup. The generator is a predetermined fixture, not live AI inference. Tasks remain in review; F owns independent acceptance. Evidence is PARALLEL_EVIDENCE in the Docker workflow log, not an assertion of success before CI runs.
+
+## Verified parallel execution — 2026-11-25
+Both Docker runs completed successfully; extracted from PARALLEL_EVIDENCE in actual job logs. Factory CI run 45547266082: 30 passed, 0 failed, 5 skipped; Docker run 45547266050: 5 passed, 0 failed, 0 skipped. The two candidate command intervals overlap by 2995 ms on the second run and 2994 ms on the first. Both workers submitted distinct patches, independently reapplied to pristine Git trees; all four containers were removed. This establishes runtime concurrency using a deterministic generator, not live model autonomy, scheduler runRound integration, independent F acceptance, or hosted 24-hour reliability. The intervals include the intentional three-second fixture delay; they do not measure coding throughput. Commands: node --test; FACTORY_DOCKER_TEST=1 node --test test/sandbox.integration.test.mjs (existing CI). Durable redacted evidence:
+
+```json
+{
+  "version": 1,
+  "kind": "live-runtime-deterministic-generator",
+  "testedCommit": "778efb892c62e45c6c75761028158ab98501dd4d",
+  "D": "e261a5617422251c7420024da2db81a96c6ad9c1",
+  "B": "0c5afeda7bd768f939cb061ab45d81e595a43303",
+  "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a",
+  "runs": [
+    {
+      "commit": "7528504c4ac7ad108e8ab814371d1e184d4098bb",
+      "dockerRun": 45547248250,
+      "job": 138979706150,
+      "overlapMs": 2994,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "commit": "778efb892c62e45c6c75761028158ab98501dd4d",
+      "dockerRun": 45547266050,
+      "job": 138979759352,
+      "overlapMs": 2995,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "workers": [
+    {
+      "worker": "worker-01",
+      "pid": 3865,
+      "taskId": "sum",
+      "attemptId": "e7557094-7fda-4895-9c1e-281cde483f34",
+      "workspace": "work-sum/worker-bP3wIu",
+      "baselineExit": 1,
+      "candidateExit": 0,
+      "patchSha256": "a009d6fef916f712bc77015b8acc38cc34202132cc170253bba365f109fdf527",
+      "candidateTree": "44b2ad5a78fef9855498a6d63c2604d9c1f38c0f",
+      "start": 1795581072252,
+      "end": 1795581075255
+    },
+    {
+      "worker": "worker-02",
+      "pid": 3866,
+      "taskId": "text",
+      "attemptId": "48e301cf-7f87-4ba7-9732-1c1d4ead1183",
+      "workspace": "work-text/worker-pL8h8P",
+      "baselineExit": 1,
+      "candidateExit": 0,
+      "patchSha256": "06d2e476108ed059cc237b5afa6877bd62a14d24217406582cd24e1fbfaaa725",
+      "candidateTree": "3aff1260221bc2028e0d1558c90bebf2b1456d69",
+      "start": 1795581072244,
+      "end": 1795581075247
+    }
+  ],
+  "resourcesCleaned": 4
+}
+```
