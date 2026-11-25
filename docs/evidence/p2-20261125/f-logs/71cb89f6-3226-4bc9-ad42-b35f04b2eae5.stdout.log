@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: keeps an interior positive value
+ok 1 - keeps an interior positive value
+  ---
+  duration_ms: 1.003374
+  type: 'test'
+  ...
+# Subtest: caps values above the upper bound
+ok 2 - caps values above the upper bound
+  ---
+  duration_ms: 0.19157
+  type: 'test'
+  ...
+# Subtest: raises values below the lower bound
+ok 3 - raises values below the lower bound
+  ---
+  duration_ms: 0.117547
+  type: 'test'
+  ...
+# Subtest: preserves both exact boundaries
+ok 4 - preserves both exact boundaries
+  ---
+  duration_ms: 0.106881
+  type: 'test'
+  ...
+# Subtest: handles an entirely negative interval
+ok 5 - handles an entirely negative interval
+  ---
+  duration_ms: 0.767809
+  type: 'test'
+  ...
+# Subtest: supports fractional values and bounds
+ok 6 - supports fractional values and bounds
+  ---
+  duration_ms: 0.15938
+  type: 'test'
+  ...
+# Subtest: collapses equal bounds for low interior and high inputs
+ok 7 - collapses equal bounds for low interior and high inputs
+  ---
+  duration_ms: 0.23156
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 84.749481

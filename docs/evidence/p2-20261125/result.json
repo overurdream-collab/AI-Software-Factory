@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "decision": "P2 accepted with coordinator-assisted PR creation",
+  "date": "2026-11-25",
+  "repository": "overurdream-collab/AI-Software-Factory",
+  "taskId": "p2-live-1e2226e5f0bb",
+  "repairSpec": {
+    "version": 1,
+    "id": "p2-live-1e2226e5f0bb",
+    "role": "dev",
+    "deps": [],
+    "repository": "overurdream-collab/AI-Software-Factory",
+    "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+    "allowedPaths": [
+      "fixtures/p2-clamp/clamp.mjs"
+    ],
+    "testPlanId": "p2-clamp-v1",
+    "goal": "The current clamp implementation ignores the lower bound. Fix clamp(value, lower, upper) to enforce BOTH bounds: return lower below the lower bound, upper above the upper bound, and the original value inside the interval. Preserve the named ES module export clamp. Return only the complete revised JavaScript source. Do not change tests or create other files.",
+    "limits": {
+      "maxAttempts": 2,
+      "maxReviewAttempts": 4,
+      "deadlineMs": 300000,
+      "maxPatchBytes": 16384
+    }
+  },
+  "repairSourceRevision": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+  "resumeControlRevision": "9ebbebe118d606d5799a6789110252d0de7400cf",
+  "model": "qwen2.5-coder:1.5b",
+  "providerObservation": {
+    "serverVersion": "0.40.18",
+    "modelDigest": "d7372fd828518a4d38b1eb196c673c31a85f2ed302b3d1e406c4c2d1b64a0668",
+    "observedAt": "2026-11-25T04:07:28.883Z"
+  },
+  "artifactSha256": "2b23e17dabc943d78d4aff88cea5133aeaa22cfb0d19ccb372e105828d45378c",
+  "artifact": {
+    "version": 2,
+    "kind": "repository-patch",
+    "taskId": "p2-live-1e2226e5f0bb",
+    "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+    "repository": "overurdream-collab/AI-Software-Factory",
+    "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+    "patch": "diff --git a/fixtures/p2-clamp/clamp.mjs b/fixtures/p2-clamp/clamp.mjs\nindex ad77e13..809386d 100644\n--- a/fixtures/p2-clamp/clamp.mjs\n+++ b/fixtures/p2-clamp/clamp.mjs\n@@ -1,2 +1 @@\n-// Deliberately defective disposable fixture, never an application dependency.\n-export const clamp = (value, lower, upper) => Math.min(upper, value);\n+export const clamp = (value, lower, upper) => Math.min(upper, Math.max(lower, value));\n\\ No newline at end of file\n",
+    "patchSha256": "ac6594524ba6562c6671212af22ea14991b5e74c7a8f3450ce7e97076d69e6a7",
+    "candidateTree": "326933db17e8dc30f747bd135a7b0dd3f23586af",
+    "changedPaths": [
+      "fixtures/p2-clamp/clamp.mjs"
+    ]
+  },
+  "independentEvidence": [
+    {
+      "version": 1,
+      "kind": "acceptance",
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "verifierId": "p2-independent-F",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "patchSha256": "ac6594524ba6562c6671212af22ea14991b5e74c7a8f3450ce7e97076d69e6a7",
+      "candidateTree": "326933db17e8dc30f747bd135a7b0dd3f23586af",
+      "startedAt": 1795579658223,
+      "finishedAt": 1795579658711,
+      "commands": [
+        {
+          "argv": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "fixtures/p2-clamp/checks.mjs"
+          ],
+          "cwd": ".",
+          "exitCode": 0,
+          "status": "passed"
+        }
+      ],
+      "tests": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logs": [
+        {
+          "ref": "docs/evidence/p2-20261125/f-logs/71cb89f6-3226-4bc9-ad42-b35f04b2eae5.stdout.log",
+          "sha256": "135db006761c30a4da550da4f8bfe9670e7a28286304d864f466cb3653236a8f"
+        },
+        {
+          "ref": "docs/evidence/p2-20261125/f-logs/a60c0a26-acde-4784-968c-f76fa281e5b0.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "runtime": "docker",
+      "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a",
+      "passed": true
+    },
+    {
+      "version": 1,
+      "kind": "acceptance",
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "verifierId": "p2-head-F",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "patchSha256": "ac6594524ba6562c6671212af22ea14991b5e74c7a8f3450ce7e97076d69e6a7",
+      "candidateTree": "326933db17e8dc30f747bd135a7b0dd3f23586af",
+      "testedCommit": "60705dbb5ca251a33b1b8b99e4c4ee7b645f4ab2",
+      "startedAt": 1795580103179,
+      "finishedAt": 1795580103711,
+      "commands": [
+        {
+          "argv": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "fixtures/p2-clamp/checks.mjs"
+          ],
+          "cwd": ".",
+          "exitCode": 0,
+          "status": "passed"
+        }
+      ],
+      "tests": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logs": [
+        {
+          "ref": "docs/evidence/p2-20261125/head-logs/1fc99c59-6218-4451-8f47-cee484bc6bbf.stdout.log",
+          "sha256": "1515dba2efd208495b3cad860c6797eb370c651b57dad7aadc5ccbcdd579943a"
+        },
+        {
+          "ref": "docs/evidence/p2-20261125/head-logs/b4c75432-114d-4893-8eed-2863ac05b0cc.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "runtime": "docker",
+      "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a",
+      "passed": true
+    }
+  ],
+  "delivery": {
+    "key": "overurdream-collab/AI-Software-Factory:58c6a72408ccb4b2ff54c56131b553b7295c38b0d403e53058e70bdbac1af5e4",
+    "repository": "overurdream-collab/AI-Software-Factory",
+    "branch": "factory/2ac6a78b421746101b046c582d03ac40a40697083c9c6553bd27040d6e7a5bfb",
+    "commitSha": "60705dbb5ca251a33b1b8b99e4c4ee7b645f4ab2",
+    "prNumber": 10,
+    "prUrl": "https://github.com/overurdream-collab/AI-Software-Factory/pull/10",
+    "state": "delivered",
+    "checkedCommit": "60705dbb5ca251a33b1b8b99e4c4ee7b645f4ab2",
+    "checkRunIds": [
+      138973942718
+    ]
+  },
+  "restartRecoveryVerified": true,
+  "deliveryReplayVerified": true,
+  "workerEvidence": [
+    {
+      "version": 1,
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "at": 1795579648909,
+      "phase": "started",
+      "model": "qwen2.5-coder:1.5b",
+      "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a"
+    },
+    {
+      "version": 1,
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "at": 1795579654406,
+      "phase": "baseline",
+      "runtime": "docker",
+      "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a",
+      "commands": [
+        {
+          "argv": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "fixtures/p2-clamp/checks.mjs"
+          ],
+          "cwd": ".",
+          "exitCode": 1,
+          "stdoutSha256": "3c645d5fc36998ceafcbc2f5fccd6bd5ff832769ac2c6e67aa837c60c2ac29dc",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "at": 1795579658205,
+      "phase": "candidate-1",
+      "runtime": "docker",
+      "imageDigest": "sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a",
+      "commands": [
+        {
+          "argv": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "fixtures/p2-clamp/checks.mjs"
+          ],
+          "cwd": ".",
+          "exitCode": 0,
+          "stdoutSha256": "e671856e4cbc6f2d7d8787f633c073f7a535d4176ee167aea5fa1f6056c2115b",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "taskId": "p2-live-1e2226e5f0bb",
+      "attemptId": "54ce6b2e-bd98-4cc6-bb99-19b1554593fd",
+      "repository": "overurdream-collab/AI-Software-Factory",
+      "baseCommit": "1e2226e5f0bb61842a45df03253a88a72a4638e4",
+      "at": 1795579658221,
+      "phase": "candidate-ready",
+      "artifact": "{\"version\":2,\"kind\":\"repository-patch\",\"taskId\":\"p2-live-1e2226e5f0bb\",\"attemptId\":\"54ce6b2e-bd98-4cc6-bb99-19b1554593fd\",\"repository\":\"overurdream-collab/AI-Software-Factory\",\"baseCommit\":\"1e2226e5f0bb61842a45df03253a88a72a4638e4\",\"patch\":\"diff --git a/fixtures/p2-clamp/clamp.mjs b/fixtures/p2-clamp/clamp.mjs\\nindex ad77e13..809386d 100644\\n--- a/fixtures/p2-clamp/clamp.mjs\\n+++ b/fixtures/p2-clamp/clamp.mjs\\n@@ -1,2 +1 @@\\n-// Deliberately defective disposable fixture, never an application dependency.\\n-export const clamp = (value, lower, upper) => Math.min(upper, value);\\n+export const clamp = (value, lower, upper) => Math.min(upper, Math.max(lower, value));\\n\\\\ No newline at end of file\\n\",\"patchSha256\":\"ac6594524ba6562c6671212af22ea14991b5e74c7a8f3450ce7e97076d69e6a7\",\"candidateTree\":\"326933db17e8dc30f747bd135a7b0dd3f23586af\",\"changedPaths\":[\"fixtures/p2-clamp/clamp.mjs\"]}",
+      "patchSha256": "ac6594524ba6562c6671212af22ea14991b5e74c7a8f3450ce7e97076d69e6a7",
+      "candidateTree": "326933db17e8dc30f747bd135a7b0dd3f23586af"
+    }
+  ],
+  "resourceCleanup": {
+    "registered": 4,
+    "cleaned": 4
+  },
+  "ci": {
+    "liveGenerationRun": 45544471305,
+    "generationJob": 138970625538,
+    "resumeRun": 45545386117,
+    "resumeJob": 138973637931,
+    "headCheckRun": 138973942718,
+    "resumeJobLogSha256": "b4e9c841f03fb5d50045cdc3f4ee520bbf8559ea1fb0878b1bf578f9d997eb3b",
+    "componentSuite": {
+      "total": 103,
+      "passed": 99,
+      "failed": 0,
+      "skipped": 4
+    },
+    "separateDockerSuite": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "artifactArchive": {
+    "id": 14990119950,
+    "sha256": "5ede42e2151ed05594f2fe6d84de625e04cda8435f33bbb3d8036a3e989d5898",
+    "expiresAt": "2026-12-09T04:15:06Z"
+  },
+  "coordinatorAssistedPR": true,
+  "assistanceReason": "GitHub Actions token received HTTP 403 creating the PR; connected GitHub app opened the same candidate as PR #10",
+  "automaticMerge": false,
+  "paidModelProviderUsed": false,
+  "fullyUnattendedDeliveryAccepted": false,
+  "twoLiveWorkersVerified": false,
+  "continuous24HoursVerified": false,
+  "fullLiveRepairSIGKILLRecoveryVerified": false,
+  "knownLedgerIssue": "Historical failure fields remain on successful task/delivery records. Current delivered state and exact successful head check are independently verified; stale failure text is retained here rather than hidden.",
+  "rejectedTrials": [
+    {
+      "run": 45543791012,
+      "reason": "invalid workflow runner context; no repair executed"
+    },
+    {
+      "run": 45544013300,
+      "reason": "0.5b invalid candidate rejected; no delivery"
+    },
+    {
+      "run": 45544471305,
+      "attempt": 1,
+      "reason": "repair accepted; Actions PR creation denied HTTP403"
+    },
+    {
+      "run": 45544471305,
+      "attempt": 2,
+      "reason": "checkpoint restored; head object not transferred into verifier clone"
+    }
+  ]
+}
