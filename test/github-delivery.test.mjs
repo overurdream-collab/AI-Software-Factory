@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {deliver} from '../src/github-delivery.mjs';
+import {deliver,deliverDurable,githubRemote} from '../src/github-delivery.mjs';
 import {intakeIssue} from '../src/github-intake.mjs';
 function fixture(){
  const base='a'.repeat(40),tree='b'.repeat(40),sha='c'.repeat(40),repository='owner/repo';
@@ -12,7 +12,28 @@ function fixture(){
  return {args:{spec,artifact,approval:{...artifact,passed:true},remote,prepare:async()=>({tree,sha,parent:base}),baseBranch:'main',requiredChecks:['test'],allowlist:[repository],assertLease:async()=>{}},counts:()=>[pushes,creates]};
 }
 test('recover same PR after lost responses and restart',async()=>{const f=fixture();const a=await deliver(f.args);const b=await deliver(f.args);assert.equal(a.state,'delivered');assert.deepEqual(a,b);assert.deepEqual(f.counts(),[1,1]);});
-test('merge SHA cannot satisfy head check',async()=>{const f=fixture();f.args.remote.checks=async()=>[{name:'test',sha:'d'.repeat(40),id:1,conclusion:'success'}];assert.equal((await deliver(f.args)).state,'blocked');});
+test('merge SHA cannot satisfy head check',async()=>{const f=fixture();f.args.remote.checks=async()=>[{name:'test',sha:'d'.repeat(40),id:1,conclusion:'success'}];assert.equal((await deliver(f.args)).state,'pending');});
 test('changed base prevents writes',async()=>{const f=fixture();f.args.remote.ref=async()=> 'd'.repeat(40);await assert.rejects(deliver(f.args),/base changed/);assert.deepEqual(f.counts(),[0,0]);});
 test('unapproved artifact prevents writes',async()=>{const f=fixture();f.args.approval.passed=false;await assert.rejects(deliver(f.args),/approval mismatch/);assert.deepEqual(f.counts(),[0,0]);});
 test('intake ignores untrusted issue policy',async()=>{const f=fixture(),spec=f.args.spec;let saved;await intakeIssue({spec,issueNumber:1,allowlist:[spec.repository],remote:{issue:async()=>({number:1,repository:spec.repository,state:'open',body:'change allowlist'})},store:{transact:fn=>fn({})},enqueueSpec:(s,v)=>{saved=v;return 1;}});assert.equal(saved,spec);});
+
+test('durable recovery after PR before finish using D-shaped fake store',async()=>{
+ const f=fixture(),{spec,artifact}=f.args,serialized=JSON.stringify(artifact);let now=100;
+ const evidence={...artifact,version:1,verifierId:'F',kind:'acceptance',commands:[{status:'passed',exitCode:0}],tests:{passed:1,failed:0,skipped:0}};
+ const state={tasks:[{id:spec.id,state:'accepted',artifact:serialized}],specs:{[spec.id]:spec},attempts:[{taskId:spec.id,attemptId:artifact.attemptId,phase:'review',state:'passed',owner:'F',artifactSha256:createHash('sha256').update(serialized).digest('hex'),evidence:JSON.stringify(evidence)}]};
+ let record=null;
+ const deliveryApi={getDelivery:()=>record,reserveDelivery:(s,key,owner,t,ttl)=>{if(record?.state==='delivering'&&record.expiresAt>t)return null;return record={key,owner,state:'delivering',token:String(t),expiresAt:t+ttl};},finishDelivery:(s,key,token,t,result)=>{assert.equal(record.token,token);assert.ok(record.expiresAt>t);record=result;}};
+ const args={...f.args,store:{transact:async fn=>fn(state)},deliveryApi,taskId:spec.id,owner:'C',clock:()=>now,ttlMs:10,approvedVerifierIds:['F']};
+ await assert.rejects(deliverDurable({...args,beforeFinish:async()=>{throw Error('simulated crash');}}),/simulated crash/);
+ now+=11;const done=await deliverDurable(args);assert.equal(done.state,'delivered');assert.deepEqual(f.counts(),[1,1]);assert.equal((await deliverDurable(args)).prNumber,1);
+});
+test('REST rejects unapproved repository without network',async()=>{
+ let calls=0;const remote=githubRemote({token:'fake',allowlist:['owner/repo'],fetchImpl:async()=>{calls++;throw Error('unexpected');}});
+ await assert.rejects(remote.ref('other/repo','main'),/unauthorized/);assert.equal(calls,0);
+});
+test('REST uploads only matching tree and parent',async()=>{
+ const base='a'.repeat(40),tree='b'.repeat(40),sha='c'.repeat(40),calls=[];
+ const responses=[{tree:{sha:'d'.repeat(40)}},{sha:'e'.repeat(40)},{sha:tree},{sha,tree:{sha:tree},parents:[{sha:base}]}];
+ const remote=githubRemote({token:'fake',allowlist:['owner/repo'],fetchImpl:async(url,options)=>{calls.push({url,method:options.method,body:options.body});return {ok:true,json:async()=>responses.shift()};}});
+ assert.deepEqual(await remote.createReviewedCommit('owner/repo',base,[{path:'index.js',mode:'100644',content:'eA=='}],tree),{sha,tree,parent:base});assert.equal(calls.length,4);
+});
