@@ -21,11 +21,20 @@ function run(source) {
   try {
     writeFileSync(join(dir,'candidate.mjs'),source);
     writeFileSync(join(dir,'independent.test.mjs'),suite);
-    const result=spawnSync(process.execPath,['--test','independent.test.mjs'],{cwd:dir,encoding:'utf8',timeout:10000});
+    const env={...process.env};
+    delete env.NODE_TEST_CONTEXT;
+    delete env.NODE_TEST_REPORTER;
+    delete env.NODE_TEST_REPORTER_DESTINATION;
+    const result=spawnSync(process.execPath,['--test','--test-reporter=tap','independent.test.mjs'],{cwd:dir,env,encoding:'utf8',timeout:10000});
     assert.ifError(result.error);
     assert.equal(result.signal,null);
-    assert.match(result.stdout,/# tests 7\b/);
+    assert.match(result.stdout,/# tests 7\b/,result.stderr);
     assert.match(result.stdout,/# skipped 0\b/);
+    assert.match(result.stdout,/# todo 0\b/);
+    const passed=Number(result.stdout.match(/# pass (\d+)/)?.[1]);
+    const failed=Number(result.stdout.match(/# fail (\d+)/)?.[1]);
+    assert.equal(passed+failed,7);
+    assert.equal(result.status,failed===0?0:1);
     return result;
   } finally {rmSync(dir,{recursive:true,force:true});}
 }
