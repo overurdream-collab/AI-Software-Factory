@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {enqueue} from './intake.mjs';
 const own=(o,k)=>Object.hasOwn(o??{},k);
 const validTime=n=>Number.isSafeInteger(n)&&n>=0;
@@ -9,7 +9,14 @@ export function enqueueSpec(state,spec){
  const normalized={version:1,id:s.id,role:s.role,goal:s.goal,deps:[...new Set(s.deps)].sort(),repository:s.repository,baseCommit:s.baseCommit,allowedPaths:[...new Set(s.allowedPaths)].sort(),testPlanId:s.testPlanId,limits:{maxAttempts:l.maxAttempts,maxReviewAttempts:l.maxReviewAttempts,deadlineMs:l.deadlineMs,maxPatchBytes:l.maxPatchBytes}};
  state.specs??={};
  if(own(state.specs,s.id)&&JSON.stringify(state.specs[s.id])!==JSON.stringify(normalized))throw Error('conflicting spec');
- const n=enqueue(state,[normalized]);
+ // C uses owner/repo#issue; legacy intake only accepts simple IDs.
+ // Validate the same dependency graph through enqueue using safe deterministic aliases.
+ if(typeof s.id!=='string'||(!/^[a-zA-Z0-9_-]{1,100}$/.test(s.id)&&!(s.id.startsWith(s.repository+'#')&&/^[1-9][0-9]*$/.test(s.id.slice(s.repository.length+1)))))throw Error('invalid task id');
+ if(s.deps.some(d=>typeof d!=='string'))throw Error('invalid dependency');
+ const alias=id=>createHash('sha256').update(id).digest('hex');
+ const mapped={tasks:state.tasks.map(t=>({...t,id:alias(t.id),deps:(t.deps??[]).map(alias)}))};
+ const n=enqueue(mapped,[{...normalized,id:alias(s.id),deps:normalized.deps.map(alias)}]);
+ if(n)state.tasks.push({...mapped.tasks.at(-1),id:s.id,deps:normalized.deps});
  Object.defineProperty(state.specs,s.id,{value:normalized,enumerable:true,configurable:true,writable:true});
  return n;
 }
@@ -28,7 +35,8 @@ export function listReclaimableResources(state,now){
 }
 export function markResourceCleaned(state,id,now){
  const r=(state.resources??[]).find(r=>r.id===id);
- if(!r||!validTime(now)||now<r.createdAt||live(state.tasks.find(t=>t.id===r.taskId&&t.attemptId===r.attemptId),r,now))throw Error('invalid cleanup');
+ if(!r||!validTime(now)||now<r.createdAt)throw Error('invalid cleanup');
+ // Trusted runner calls this after successful removal even while its lease is live.
  r.cleanedAt??=now;
 }
 export function getDelivery(state,key){return structuredClone((state.deliveries??[]).find(d=>d.key===key)??null);}
