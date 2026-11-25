@@ -38,3 +38,44 @@ export async function repairRepository({spec,attemptId,repositoryPath,root,gener
   throw Error('repair attempts exhausted');
  }finally{await cleanup();}
 }
+
+// Host-only adapter: use the real A/E factories after coordinator integration.
+// The SQLite store is injected by D; no external operation runs inside transact.
+export async function executeLiveRepository({spec,attemptId,leaseToken,owner,store,repositoryPath,root,testPlan,runnerLimits,imageDigest,providerConfig,approvedRepositories,signal,clock=Date.now}){
+ if(!store||typeof store.transact!=='function'||!Array.isArray(approvedRepositories)||!approvedRepositories.includes(spec?.repository)||!attemptId||!leaseToken||!owner||!/^sha256:[a-f0-9]{64}$/.test(imageDigest))throw Error('invalid live execution authorization');
+ const {ollamaGenerator}=await import('./ollama.mjs');
+ const {createProjectRunner}=await import('./sandbox.mjs');
+ if(typeof createProjectRunner!=='function')throw Error('E project runner not integrated');
+ const generate=ollamaGenerator(providerConfig);
+ const isolated=createProjectRunner({store,taskId:spec.id,attemptId,leaseToken,owner,clock,imageDigest});
+ const persist=async event=>store.transact(state=>{
+  const t=state.tasks.find(t=>t.id===spec.id&&t.attemptId===attemptId);
+  if(!t||t.state!=='running'||t.token!==leaseToken||t.worker!==owner||t.expiresAt<=clock())throw Error('stale evidence lease');
+  state.repositoryEvidence??=[];
+  state.repositoryEvidence.push({version:1,taskId:spec.id,attemptId,repository:spec.repository,baseCommit:spec.baseCommit,at:clock(),...event});
+ });
+ const runProject=async input=>{
+  const {stageProject}=await import('./workspace.mjs');
+  const staged=await stageProject(input.workspace,input.signal);
+  try{
+   const result=await isolated({...input,workspace:staged.workspace});
+   if(result.runtime!=='docker'||result.imageDigest!==imageDigest)throw Error('unexpected runtime evidence');
+   if(result.commands.some(c=>[125,126,127].includes(c.exitCode)))throw Error('sandbox infrastructure failure');
+   return result;
+  }finally{await staged.cleanup();}
+ };
+ await persist({phase:'started',model:providerConfig?.model??'qwen3:8b',imageDigest});
+ try{
+  const artifact=await repairRepository({spec,attemptId,repositoryPath,root,generate,runProject,testPlan,runnerLimits,signal,onEvidence:async({phase,result})=>{
+   // Candidate-controlled stdout/stderr may contain secrets or forged test counts.
+   // Persist only fingerprints and command outcomes; F owns independent raw evidence.
+   await persist({phase,runtime:result.runtime,imageDigest:result.imageDigest,commands:result.commands.map(c=>({argv:c.argv,cwd:c.cwd,exitCode:c.exitCode,stdoutSha256:sha(c.stdout??''),stderrSha256:sha(c.stderr??'')}))});
+  }});
+  const p=JSON.parse(artifact);
+  await persist({phase:'candidate-ready',artifact,patchSha256:p.patchSha256,candidateTree:p.candidateTree});
+  return artifact;
+ }catch(error){
+  // No exception text from untrusted project/model is persisted.
+  await persist({phase:'blocked-or-failed'});throw error;
+ }
+}
