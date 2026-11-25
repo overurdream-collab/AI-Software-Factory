@@ -7,10 +7,14 @@ export function renew(state,{id,token,owner,now,ttl,review=false}){
  t[expiry]=Math.max(t[expiry],now+ttl);
  return t[expiry];
 }
-export async function withHeartbeat({store,task,owner,clock,ttl,review=false,operation,deadlineMs=300000}){
+export async function withHeartbeat({store,task,owner,clock,ttl,review=false,operation,deadlineMs=300000,signal}){
  if(!Number.isSafeInteger(deadlineMs)||deadlineMs<1||deadlineMs>3600000)throw Error('invalid deadline');
  const controller=new AbortController();
- let deadline;
+ let deadline, rejectAbort;
+ const cancelled=new Promise((_,reject)=>{rejectAbort=reject;});
+ const cancel=()=>{const e=signal?.reason??Error('operation cancelled');controller.abort(e);rejectAbort(e);};
+ signal?.addEventListener('abort',cancel,{once:true});
+ if(signal?.aborted)cancel();
  const expired=new Promise((_,reject)=>{deadline=setTimeout(()=>{const e=Error('adapter deadline exceeded');controller.abort(e);reject(e);},deadlineMs);});
  let pending=Promise.resolve(),failure,stopped=false;
  const beat=()=>{
@@ -18,14 +22,14 @@ export async function withHeartbeat({store,task,owner,clock,ttl,review=false,ope
   pending=pending.then(async()=>{
    if(stopped||failure)return;
    try{await store.transact(s=>renew(s,{id:task.id,token:review?task.reviewToken:task.token,owner,now:clock(),ttl,review}));}
-   catch(e){failure=e;controller.abort(e);}
+   catch(e){failure=e;controller.abort(e);rejectAbort(e);}
   });
  };
  const timer=setInterval(beat,Math.max(1,Math.floor(ttl/3)));
  try{
-  const result=await Promise.race([Promise.resolve().then(()=>operation(Object.freeze(task),controller.signal)),expired]);
+  const result=await Promise.race([Promise.resolve().then(()=>(controller.signal.throwIfAborted(),operation(Object.freeze(task),controller.signal))),expired,cancelled]);
   stopped=true;clearInterval(timer);await pending;
   if(failure)throw failure;
   return result;
- }finally{stopped=true;clearTimeout(deadline);clearInterval(timer);await pending;}
+ }finally{signal?.removeEventListener('abort',cancel);stopped=true;clearTimeout(deadline);clearInterval(timer);await pending;}
 }
