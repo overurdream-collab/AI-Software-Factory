@@ -39,13 +39,35 @@ export function markResourceCleaned(state,id,now){
  // Trusted runner calls this after successful removal even while its lease is live.
  r.cleanedAt??=now;
 }
-export function getDelivery(state,key){return structuredClone((state.deliveries??[]).find(d=>d.key===key)??null);}
+// failure is current only; failureHistory is append-only historical context.
+function archiveDeliveryFailure(d,now,reason=d.failure){
+ if(typeof reason==='string'&&reason.trim()){
+  d.failureHistory??=[];
+  d.failureHistory.push({reason,at:d.failureAt??now,state:d.state});
+ }
+ delete d.failure;delete d.failureAt;
+}
+export function normalizeDeliveryFailures(state){
+ for(const d of state.deliveries??[])if(d.state==='delivered'||d.state==='delivering')archiveDeliveryFailure(d,null);
+}
+export function getDelivery(state,key){
+ const d=(state.deliveries??[]).find(d=>d.key===key);
+ if(!d)return null;
+ const copy=structuredClone(d);
+ if(copy.state==='delivered'||copy.state==='delivering')archiveDeliveryFailure(copy,null);
+ return copy;
+}
 export function reserveDelivery(state,key,owner,now,ttlMs){
  if(typeof key!=='string'||!key||!owner||!validTime(now)||!Number.isSafeInteger(ttlMs)||ttlMs<1||!validTime(now+ttlMs))throw Error('invalid delivery reservation');
  state.deliveries??=[];
  let d=state.deliveries.find(d=>d.key===key);
  if(!d){d={key,state:'pending',repository:key.split(':')[0]};state.deliveries.push(d);}
  if(d.state==='delivered'||d.state==='blocked'||(d.state==='delivering'&&d.expiresAt>now))return null;
+ archiveDeliveryFailure(d,now);
+ if(d.state==='delivering'){
+  d.failureHistory??=[];
+  d.failureHistory.push({reason:'delivery-lease-expired',at:now,state:'delivering'});
+ }
  Object.assign(d,{state:'delivering',owner,token:randomUUID(),expiresAt:now+ttlMs});
  return {key,owner,token:d.token,expiresAt:d.expiresAt};
 }
@@ -54,7 +76,11 @@ export function finishDelivery(state,key,token,now,result){
  if(!d||d.state!=='delivering'||!token||d.token!==token||!validTime(now)||d.expiresAt<=now)throw Error('stale delivery');
  if(!result||!['pending','blocked','delivered'].includes(result.state))throw Error('invalid delivery result');
  if(result.state==='delivered'&&(!oid(result.commitSha)||result.checkedCommit!==result.commitSha||!Number.isSafeInteger(result.prNumber)||result.prNumber<1||!result.prUrl||!Array.isArray(result.checkRunIds)||!result.checkRunIds.length))throw Error('missing delivery evidence');
- for(const k of ['state','repository','branch','commitSha','prNumber','prUrl','checkedCommit','checkRunIds','failure'])if(own(result,k))d[k]=structuredClone(result[k]);
+ if(own(result,'failure')&&result.failure!==undefined&&result.failure!==null&&(typeof result.failure!=='string'||!result.failure.trim()))throw Error('invalid delivery failure');
+ if(result.state==='delivered'&&result.failure)throw Error('delivered result cannot contain failure');
+ archiveDeliveryFailure(d,now);
+ for(const k of ['state','repository','branch','commitSha','prNumber','prUrl','checkedCommit','checkRunIds'])if(own(result,k))d[k]=structuredClone(result[k]);
+ if(result.state!=='delivered'&&result.failure){d.failure=result.failure;d.failureAt=now;}
  delete d.owner;delete d.token;delete d.expiresAt;
 }
 export function startAttempt(state,t,phase,owner,token,now){
