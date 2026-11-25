@@ -1,0 +1,81 @@
+name: P2 live factory pilot
+on:
+  push:
+    branches:
+      - 'coord/p2-live-integration-v*'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  actions: read
+concurrency:
+  group: p2-live-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      P2_STATE_DIR: ${{ runner.temp }}/factory-p2-state
+      OLLAMA_NO_CLOUD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Full component regression suite
+        run: npm test
+      - name: Prepare dedicated Docker runtime
+        run: |
+          docker pull node:22-alpine
+          P2_IMAGE_REF=$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-alpine)
+          echo "P2_IMAGE_DIGEST=${P2_IMAGE_REF#*@}" >> "$GITHUB_ENV"
+      - name: Verify real Docker recovery controls
+        run: node --test test/sandbox.integration.test.mjs
+        env:
+          FACTORY_DOCKER_TEST: '1'
+      - name: Restore durable checkpoint on job retry
+        if: github.run_attempt > 1
+        uses: actions/download-artifact@v4
+        with:
+          name: factory-p2-checkpoint
+          path: ${{ runner.temp }}/factory-p2-state
+      - name: Install pinned local inference runtime
+        if: github.run_attempt == 1
+        run: |
+          mkdir -p "$RUNNER_TEMP/ollama"
+          curl -fL --retry 2 --max-time 300 --silent --show-error https://github.com/ollama/ollama/releases/download/v0.40.18/ollama-linux-amd64.tar.zst -o "$RUNNER_TEMP/ollama.tar.zst"
+          echo "b82649006cb5b54ed1237fa2d1a26a7f939a4fd03150033759acbff7ff315adf  $RUNNER_TEMP/ollama.tar.zst" | sha256sum --check
+          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama" --exclude='lib/ollama/cuda*' --exclude='lib/ollama/vulkan*' --exclude='lib/ollama/rocm*'
+          rm "$RUNNER_TEMP/ollama.tar.zst"
+          OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="$RUNNER_TEMP/ollama-models" "$RUNNER_TEMP/ollama/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11434/api/version; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/version
+          "$RUNNER_TEMP/ollama/bin/ollama" pull qwen2.5-coder:0.5b
+      - name: Restore pinned image for checkpoint replay
+        if: github.run_attempt > 1
+        run: |
+          P2_PINNED_IMAGE=$(node -p "JSON.parse(require('fs').readFileSync(process.env.P2_STATE_DIR+'/context.json','utf8')).imageDigest")
+          docker pull "node@$P2_PINNED_IMAGE"
+      - name: Live A-B-E repair and independent F verification
+        run: node scripts/p2-live.mjs repair
+      - name: Recover D checkpoint, deliver with C and verify exact PR head
+        run: node scripts/p2-live.mjs deliver
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain durable checkpoint and independent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-p2-checkpoint
+          path: ${{ runner.temp }}/factory-p2-state/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
