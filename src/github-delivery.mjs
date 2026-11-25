@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 const hash = s => createHash('sha256').update(s).digest('hex');
 const oid = s => typeof s === 'string' && /^[a-f0-9]{40}$/.test(s);
 export function deliveryKey(spec) { return spec.repository+':'+hash(JSON.stringify([spec.repository,spec.id])); }
@@ -35,13 +35,16 @@ export async function deliver({spec,artifact,approval,remote,prepare,baseBranch,
 }
 
 /** REST adapter. Credentials stay in trusted host, never in candidate execution. */
-export function githubRemote({token,allowlist,fetchImpl=fetch,timeoutMs=15000}) {
- if(typeof token!=='string'||!token||!Array.isArray(allowlist)||!Number.isSafeInteger(timeoutMs)||timeoutMs<1)throw Error('invalid GitHub configuration');
+export function githubRemote({token,tokenProvider,allowlist,fetchImpl=fetch,timeoutMs=15000}) {
+ if((typeof tokenProvider!=='function'&&(typeof token!=='string'||!token))||!Array.isArray(allowlist)||!Number.isSafeInteger(timeoutMs)||timeoutMs<1)throw Error('invalid GitHub configuration');
  const root=r=>{if(!allowlist.includes(r)||!/^[-\w.]+\/[-\w.]+$/.test(r))throw Error('unauthorized repository');return 'https://api.github.com/repos/'+r;};
  async function request(r,path,{method='GET',body,missing=false}={}){
-  const response=await fetchImpl(root(r)+path,{method,redirect:'error',signal:AbortSignal.timeout(timeoutMs),headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const url=root(r)+path;
+  const access=tokenProvider?await tokenProvider(r):token;
+  if(typeof access!=='string'||!access)throw Error('missing GitHub credential');
+  const response=await fetchImpl(url,{method,redirect:'error',signal:AbortSignal.timeout(timeoutMs),headers:{Authorization:'Bearer '+access,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
   if(response.status===404&&missing)return null;
-  if(!response.ok)throw Error('GitHub HTTP '+response.status);
+  if(!response.ok){const err=new Error('GitHub HTTP '+response.status+' '+method+' '+path.split('?')[0]);err.status=response.status;err.requiredPermissions=response.headers?.get('x-accepted-github-permissions')??null;throw err;}
   return response.json();
  }
  async function pages(r,path,extract=x=>x){
@@ -139,11 +142,35 @@ export async function deliverDurable({store,deliveryApi,taskId,owner,ttlMs=12000
  let result;
  try{result=await deliver({spec,artifact,approval,remote,prepare,baseBranch,requiredChecks,allowlist,assertLease});}
  catch(error){
-  await store.transact(state=>finishDelivery(state,key,lease.token,clock(),{state:'pending',repository:spec.repository,failure:'delivery reconciliation required'}));
+  await store.transact(state=>finishDelivery(state,key,lease.token,clock(),{state:'pending',repository:spec.repository,failure:error.status===403?'github-permission-denied':error.status===401?'github-authentication-failed':'delivery reconciliation required'}));
   throw error;
  }
  // Crash injection belongs to the trusted harness, outside the transaction.
  await beforeFinish(result);
  await store.transact(state=>finishDelivery(state,key,lease.token,clock(),result));
  return result;
+}
+
+/** Per-repository installation tokens, cached until shortly before expiry. */
+export function githubAppTokenProvider({appId,installationId,privateKey,allowlist,fetchImpl=fetch,clock=Date.now}){
+ if(!/^\d+$/.test(String(appId))||!/^\d+$/.test(String(installationId))||!privateKey||!Array.isArray(allowlist)||!allowlist.length)throw Error('invalid GitHub App configuration');
+ const permissions={contents:'write',pull_requests:'write',issues:'read',checks:'read',metadata:'read'};
+ const cache=new Map(),pending=new Map();
+ const encode=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
+ async function mint(repository){
+  const now=Math.floor(clock()/1000);
+  const unsigned=encode({alg:'RS256',typ:'JWT'})+'.'+encode({iat:now-60,exp:now+540,iss:String(appId)});
+  const jwt=unsigned+'.'+createSign('RSA-SHA256').update(unsigned).sign(privateKey,'base64url');
+  const res=await fetchImpl('https://api.github.com/app/installations/'+installationId+'/access_tokens',{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{Authorization:'Bearer '+jwt,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:JSON.stringify({repositories:[repository.split('/')[1]],permissions})});
+  if(!res.ok){const e=new Error('GitHub App token HTTP '+res.status);e.status=res.status;throw e;}
+  const result=await res.json(),expires=Date.parse(result.expires_at);
+  if(typeof result.token!=='string'||!result.token||!Number.isFinite(expires)||expires<=clock()+60000||Object.entries(permissions).some(([k,v])=>result.permissions?.[k]!==v)||!Array.isArray(result.repositories)||result.repositories.length!==1||result.repositories[0].full_name.toLowerCase()!==repository.toLowerCase())throw Error('GitHub App token scope mismatch');
+  cache.set(repository,{token:result.token,expires});return result.token;
+ }
+ return async repository=>{
+  if(!allowlist.includes(repository)||!/^[-\w.]+\/[-\w.]+$/.test(repository))throw Error('unauthorized repository');
+  const hit=cache.get(repository);if(hit&&hit.expires>clock()+60000)return hit.token;
+  if(!pending.has(repository))pending.set(repository,mint(repository).finally(()=>pending.delete(repository)));
+  return pending.get(repository);
+ };
 }
