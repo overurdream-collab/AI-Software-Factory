@@ -8,7 +8,7 @@ export async function runRound({store,workers,maxParallel=2,signal}){
  async function lane(){
   while(!signal?.aborted&&index<workers.length){
    const i=index++;const w=workers[i];
-   try{results[i]=await tick({...w,store});}catch{results[i]={state:'error',worker:w.worker};}
+   try{results[i]=await tick({...w,store,signal});}catch{results[i]={state:'error',worker:w.worker};}
   }
  }
  await Promise.all(Array.from({length:Math.min(maxParallel,workers.length)},lane));
