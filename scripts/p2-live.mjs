@@ -68,7 +68,10 @@ if (phase === 'repair') {
   const imageDigest = process.env.P2_IMAGE_DIGEST;
   assert.match(imageDigest || '', /^sha256:[a-f0-9]{64}$/);
   if (context) {
-    assert.equal(context.spec.baseCommit,baseCommit,'checkpoint must match this source revision');
+    const expectedRepairBase=process.env.P2_EXPECTED_REPAIR_BASE || baseCommit;
+    assert.equal(context.spec.baseCommit,expectedRepairBase,'checkpoint repair base must match the operator pin');
+    assert.equal(context.sourceRevision,expectedRepairBase);
+    assert.equal((await git(repositoryPath,['rev-parse','refs/remotes/origin/'+context.baseBranch])).trim(),expectedRepairBase,'repair base branch must remain immutable');
     const reopened = new SQLiteStore(dbPath);
     try {
       const task = await reopened.transact(s=>s.tasks.find(t=>t.id===context.spec.id));
@@ -77,6 +80,7 @@ if (phase === 'repair') {
       console.log(JSON.stringify({phase:'repair-resumed',baseCommit,artifactSha256:context.artifactSha256}));
     } finally {reopened.close();}
   } else {
+    assert.ok(!process.env.P2_RESUME_RUN_ID,'resume must restore an accepted checkpoint; never regenerate');
     const [version,tags] = await Promise.all([localJson('/api/version'),localJson('/api/tags')]);
     const installed = tags.models.find(x=>x.name===model || x.model===model);
     assert.ok(installed?.digest,'actual installed model digest required');
@@ -144,8 +148,8 @@ if (phase === 'repair') {
       assert.equal(result?.state,'pending','PR must exist before head verification');
       const head = result.commitSha;
       await git(repositoryPath,['fetch','--no-tags','origin',
-        'refs/heads/'+result.branch+':refs/remotes/origin/'+result.branch]);
-      assert.equal((await git(repositoryPath,['rev-parse','refs/remotes/origin/'+result.branch])).trim(),head);
+        'refs/heads/'+result.branch+':refs/heads/p2-head-'+head]);
+      assert.equal((await git(repositoryPath,['rev-parse','refs/heads/p2-head-'+head])).trim(),head);
       const auditId = 'head-'+spec.baseCommit.slice(0,12)+'-'+head.slice(0,12);
       await store.transact(s=>enqueue(s,[{id:auditId,role:'audit',goal:'Independent verification of delivered GitHub head',deps:[]}]));
       let audit = await store.transact(s=>claim(s,'audit','p2-head-F',Date.now(),60000,3));

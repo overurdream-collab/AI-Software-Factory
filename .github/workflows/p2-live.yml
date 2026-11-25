@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 25
     env:
       OLLAMA_NO_CLOUD: '1'
+      P2_RESUME_RUN_ID: '45544471305'
+      P2_EXPECTED_REPAIR_BASE: '1e2226e5f0bb61842a45df03253a88a72a4638e4'
     steps:
       - name: Initialize durable checkpoint directory
         run: echo "P2_STATE_DIR=$RUNNER_TEMP/factory-p2-state" >> "$GITHUB_ENV"
@@ -40,13 +42,15 @@ jobs:
         env:
           FACTORY_DOCKER_TEST: '1'
       - name: Restore durable checkpoint on job retry
-        if: github.run_attempt > 1
+        if: github.run_attempt > 1 || env.P2_RESUME_RUN_ID != ''
         uses: actions/download-artifact@v4
         with:
           name: factory-p2-checkpoint
           path: ${{ runner.temp }}/factory-p2-state
+          run-id: ${{ env.P2_RESUME_RUN_ID || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install pinned local inference runtime
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && env.P2_RESUME_RUN_ID == ''
         run: |
           mkdir -p "$RUNNER_TEMP/ollama"
           curl -fL --retry 2 --max-time 300 --silent --show-error https://github.com/ollama/ollama/releases/download/v0.40.18/ollama-linux-amd64.tar.zst -o "$RUNNER_TEMP/ollama.tar.zst"
@@ -61,7 +65,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:11434/api/version
           "$RUNNER_TEMP/ollama/bin/ollama" pull qwen2.5-coder:1.5b
       - name: Restore pinned image for checkpoint replay
-        if: github.run_attempt > 1
+        if: github.run_attempt > 1 || env.P2_RESUME_RUN_ID != ''
         run: |
           P2_PINNED_IMAGE=$(node -p "JSON.parse(require('fs').readFileSync(process.env.P2_STATE_DIR+'/context.json','utf8')).imageDigest")
           docker pull "node@$P2_PINNED_IMAGE"

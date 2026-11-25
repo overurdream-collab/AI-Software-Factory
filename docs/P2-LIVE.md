@@ -23,3 +23,9 @@ GitHub Actions may be prevented by repository policy from opening pull requests 
 Evidence and checkpoints are uploaded as factory-p2-checkpoint (14-day artifact retention). They contain no GitHub credential; candidate code never receives one. Log hashes and raw public-fixture test outputs are retained outside candidate workspaces. Completed sanitized results should also be copied into a reviewable repository evidence document for longer retention.
 
 This pilot is not a 24-hour hosted service, not proof of two live coding workers, and not a guarantee of all possible repairs. Initial addition of this file is preparation, not evidence of successful live execution. Use actual run/check/PR results to decide acceptance.
+
+## Resume control revision
+
+The v2 control branch restores the accepted checkpoint from run 45544471305. Its operator-pinned repair base remains 1e2226e5f0bb61842a45df03253a88a72a4638e4 on coord/p2-live-integration-v1, and its reviewed head remains 60705dbb5ca251a33b1b8b99e4c4ee7b645f4ab2 in PR #10. It must not regenerate a patch or change the fixture's independent tests. The artifact SHA-256 before resumption is 2b23e17dabc943d78d4aff88cea5133aeaa22cfb0d19ccb372e105828d45378c.
+
+The first resumed job exposed a local Git transport defect: clone transfers local branch refs, not remote-tracking refs. The control revision now fetches the exact delivered head into a local refs/heads/p2-head-<sha> and asserts its identity before F clones it. Independent verifier and check-file contents remain unchanged. This is a control-plane transport repair, not an alteration of the accepted source or acceptance criteria. The original v1 base is deliberately left immutable.
