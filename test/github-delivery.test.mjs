@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
-import {deliver,deliverDurable,githubRemote} from '../src/github-delivery.mjs';
+import {createHash,generateKeyPairSync} from 'node:crypto';
+import {deliver,deliverDurable,githubRemote,githubAppTokenProvider} from '../src/github-delivery.mjs';
 import {intakeIssue} from '../src/github-intake.mjs';
 function fixture(){
  const base='a'.repeat(40),tree='b'.repeat(40),sha='c'.repeat(40),repository='owner/repo';
@@ -36,4 +36,21 @@ test('REST uploads only matching tree and parent',async()=>{
  const responses=[{tree:{sha:'d'.repeat(40)}},{sha:'e'.repeat(40)},{sha:tree},{sha,tree:{sha:tree},parents:[{sha:base}]}];
  const remote=githubRemote({token:'fake',allowlist:['owner/repo'],fetchImpl:async(url,options)=>{calls.push({url,method:options.method,body:options.body});return {ok:true,json:async()=>responses.shift()};}});
  assert.deepEqual(await remote.createReviewedCommit('owner/repo',base,[{path:'index.js',mode:'100644',content:'eA=='}],tree),{sha,tree,parent:base});assert.equal(calls.length,4);
+});
+
+test('App token is scoped, cached and renewed; unauthorized repository never calls API',async()=>{
+ const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});let now=1700000000000,calls=0;
+ const provider=githubAppTokenProvider({appId:12,installationId:34,privateKey,allowlist:['owner/repo'],clock:()=>now,fetchImpl:async(url,opts)=>{
+  calls++;assert.equal(url,'https://api.github.com/app/installations/34/access_tokens');
+  const body=JSON.parse(opts.body);assert.deepEqual(body.repositories,['repo']);assert.equal(body.permissions.pull_requests,'write');
+  assert.equal(opts.headers.Authorization.split('.')[0].startsWith('Bearer '),true);
+  return {ok:true,json:async()=>({token:'fake-'+calls,expires_at:new Date(now+3600000).toISOString(),permissions:body.permissions,repositories:[{full_name:'owner/repo'}]})};
+ }});
+ await assert.rejects(provider('other/repo'),/unauthorized/);
+ assert.deepEqual(await Promise.all([provider('owner/repo'),provider('owner/repo')]),['fake-1','fake-1']);assert.equal(calls,1);
+ now+=3550000;assert.equal(await provider('owner/repo'),'fake-2');
+});
+test('403 reports missing permission without exposing token or response body',async()=>{
+ const remote=githubRemote({tokenProvider:async()=> 'secret-test-token',allowlist:['owner/repo'],fetchImpl:async()=>({ok:false,status:403,headers:{get:()=> 'pull_requests=write'}})});
+ await assert.rejects(remote.createPR({repository:'owner/repo',branch:'factory/test',baseBranch:'main'}),e=>e.status===403&&e.requiredPermissions==='pull_requests=write'&&!e.message.includes('secret-test-token'));
 });
