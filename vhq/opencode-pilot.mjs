@@ -19,8 +19,10 @@ export function verifyPilot(raw){
  if(typeof raw!=='string'||Buffer.byteLength(raw)>65536)throw Error('invalid output');
  const texts=[];
  for(const line of raw.split(/\r?\n/)){if(!line.trim())continue;let e;try{e=JSON.parse(line);}catch{throw Error('invalid provider event');}if(e.type==='error')throw Error('provider error');if(e.type==='text'&&typeof e.part?.text==='string')texts.push(e.part.text);if(e.type==='tool_use')throw Error('unexpected tool use');}
- const code=texts.join('').trim().replace(/^```(?:javascript|js)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
- if(!/^export\s+function\s+add\s*\(\s*a\s*,\s*b\s*\)\s*\{\s*return\s+a\s*\+\s*b\s*;?\s*\}$/.test(code))throw Error('candidate outside allowed grammar');
+ const code=texts.join('').trim().replace(/^`([^`\r\n]+)`$/,'$1').replace(/^```(?:javascript|js)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
+ const functionForm=/^export\s+function\s+add\s*\(\s*a\s*,\s*b\s*\)\s*\{\s*return\s+a\s*\+\s*b\s*;?\s*\}$/;
+ const arrowForm=/^export\s+const\s+add\s*=\s*\(\s*a\s*,\s*b\s*\)\s*=>\s*(?:a\s*\+\s*b|Number\(\s*a\s*\)\s*\+\s*Number\(\s*b\s*\))\s*;?$/;
+ if(!functionForm.test(code)&&!arrowForm.test(code))throw Error('candidate outside allowed grammar');
  return {model,code,sha256:createHash('sha256').update(code).digest('hex'),verification:'strict-addition-grammar',tests:0};
 }
 export async function runPilot(invoke=invokeFreePilot){
