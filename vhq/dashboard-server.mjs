@@ -1,11 +1,12 @@
 import {createServer} from 'node:http';
 import {readFileSync} from 'node:fs';
 import {timingSafeEqual} from 'node:crypto';
+import {inspectProviders,recommendInspection} from './provider-manager.mjs';
 import {getDeepSeekBalance} from './deepseek-direct.mjs';
 import {runPilot} from './opencode-pilot.mjs';
 import {prepareInteraction} from './interaction.mjs';
 const html=readFileSync(new URL('./dashboard.html',import.meta.url));
-export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance}){
+export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders}){
  if(typeof token!=='string'||token.length<32||!Number.isSafeInteger(expiresAt))throw Error('operator token and expiry required');
  const authorized=req=>{const a=Buffer.from(req.headers.authorization||'');const b=Buffer.from('Bearer '+token);return a.length===b.length&&timingSafeEqual(a,b)&&clock()<expiresAt;};
  const grant=action=>({action,repository,expiresAt});
@@ -17,6 +18,9 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
    if(req.method==='GET'&&['/dashboard.js','/dashboard.css'].includes(req.url)){res.writeHead(200,{'Content-Type':req.url.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8'});return res.end(readFileSync(new URL('.'+req.url,import.meta.url)));}
    if(!authorized(req))return send(401,{error:'unauthorized'});
    if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,additionalBudget:0,providers:pilotEnabled?'opencode-pilot-enabled':'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()}).map(a=>({...a,pilot:registry.pilotStatus(a.id)}))});
+   if(req.method==='GET'&&req.url==='/api/providers'){
+    const providers=await providerInspector();return send(200,{providers,recommendedForInspection:recommendInspection(providers),additionalBudget:0,generationEnabled:false});
+   }
    if(req.method==='GET'&&req.url==='/api/deepseek/balance'){
     try{return send(200,await deepseekBalance());}catch(e){return send(503,{state:'balance-unavailable',generationEnabled:false,error:/^balance-(invalid|http-[0-9]{3})$/.test(e.message)?e.message:e.name==='TimeoutError'?'balance-timeout':'balance-unreachable'});}
    }
