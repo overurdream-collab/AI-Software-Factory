@@ -1,7 +1,7 @@
 name: P3 live workers pilot
 on:
   push:
-    branches: ['coord/p3-live-workers-v1']
+    branches: ['coord/p3-live-workers-v1', 'coord/p3-live-crash-v1']
 permissions:
   contents: read
 jobs:
@@ -44,6 +44,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: p3-live-worker-evidence
+          name: p3-live-crash-evidence
           path: ${{ runner.temp }}/p3/evidence.json
           retention-days: 14
