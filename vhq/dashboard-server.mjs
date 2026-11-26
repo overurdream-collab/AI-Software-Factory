@@ -24,7 +24,7 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
     if(typeof b?.id!=='string'||b.confirm!=='synthetic-addition-only')return send(400,{error:'explicit pilot confirmation required'});
     if(!registry.claimPilot({id:b.id,grant:grant('submit'),repository,now:clock()}))return send(409,{error:'already attempted; reconcile manually'});
     try{const evidence=await pilotRunner();registry.finishPilot(b.id,'pilot-verified',evidence,clock());return send(200,{state:'pilot-verified',evidence});}
-    catch{registry.finishPilot(b.id,'blocked-reconcile',{reason:'execution or verification failed; no automatic retry'},clock());return send(502,{state:'blocked-reconcile'});}
+    catch(e){const allowed=['timeout-ambiguous','output-limit-ambiguous','launch-failed','provider-failed','invalid output','invalid provider event','provider error','unexpected tool use','candidate outside allowed grammar','acceptance failed'];const reason=allowed.includes(e?.message)?e.message:'unknown-pilot-error';registry.finishPilot(b.id,'blocked-reconcile',{reason},clock());console.error('VHQ pilot:',reason);return send(502,{state:'blocked-reconcile',error:reason});}
    }
    if(req.method==='POST'&&req.url==='/api/intake'){
     if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
