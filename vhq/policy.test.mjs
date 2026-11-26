@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {authorize,status} from './policy.mjs';
+const grant={action:'submit',repository:'org/repo',expiresAt:100};
+const req={action:'submit',repository:'org/repo',paid:false,production:false};
+test('scoped grant permits only bounded request',()=>{assert.equal(authorize(grant,req,99),true);for(const change of [{repository:'other/repo'},{action:'merge'},{paid:true},{production:true}])assert.equal(authorize(grant,{...req,...change},99),false);});
+test('default deny and expiry',()=>{assert.equal(authorize(null,req,1),false);assert.equal(authorize(grant,req,100),false);assert.equal(authorize(grant,{...req,paid:undefined},1),false);});
+test('unavailable backend blocks',()=>assert.equal(status(null),'blocked'));
+test('accepted does not imply delivery',()=>assert.equal(status({available:true,accepted:true}),'awaiting-delivery'));
+test('delivery requires independent evidence and matching commit',()=>{const x={available:true,delivery:'delivered',accepted:true,independentEvidence:true,commit:'a'.repeat(40),checkedCommit:'a'.repeat(40)};assert.equal(status(x),'delivered');assert.equal(status({...x,checkedCommit:'b'.repeat(40)}),'unverified');assert.equal(status({...x,independentEvidence:false}),'unverified');});
