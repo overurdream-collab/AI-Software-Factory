@@ -1,14 +1,16 @@
 import {createServer} from 'node:http';
 import {readFileSync} from 'node:fs';
 import {timingSafeEqual} from 'node:crypto';
+import {runOpenRouterPilot} from './openrouter-pilot.mjs';
 import {inspectProviders,recommendInspection} from './provider-manager.mjs';
 import {getDeepSeekBalance} from './deepseek-direct.mjs';
 import {runPilot} from './opencode-pilot.mjs';
 import {prepareInteraction} from './interaction.mjs';
 const html=readFileSync(new URL('./dashboard.html',import.meta.url));
-export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders}){
+export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders,routerPilot=runOpenRouterPilot}){
  if(typeof token!=='string'||token.length<32||!Number.isSafeInteger(expiresAt))throw Error('operator token and expiry required');
  const authorized=req=>{const a=Buffer.from(req.headers.authorization||'');const b=Buffer.from('Bearer '+token);return a.length===b.length&&timingSafeEqual(a,b)&&clock()<expiresAt;};
+ let routerAttempted=false;
  const grant=action=>({action,repository,expiresAt});
  return createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
@@ -18,6 +20,15 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
    if(req.method==='GET'&&['/dashboard.js','/dashboard.css'].includes(req.url)){res.writeHead(200,{'Content-Type':req.url.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8'});return res.end(readFileSync(new URL('.'+req.url,import.meta.url)));}
    if(!authorized(req))return send(401,{error:'unauthorized'});
    if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,additionalBudget:0,providers:pilotEnabled?'opencode-pilot-enabled':'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()}).map(a=>({...a,pilot:registry.pilotStatus(a.id)}))});
+   if(req.method==='POST'&&req.url==='/api/openrouter/pilot'){
+    if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
+    let size=0,parts=[];for await(const c of req){size+=c.length;if(size>2048)return send(413,{error:'too large'});parts.push(c);}
+    const b=JSON.parse(Buffer.concat(parts).toString());
+    if(b?.confirm!=='single-free-synthetic-pilot'||typeof b.modelID!=='string'||!b.modelID.endsWith(':free'))return send(400,{error:'explicit free pilot confirmation required'});
+    if(routerAttempted)return send(409,{error:'one attempt per server session; reconcile before restart'});
+    routerAttempted=true;
+    try{return send(200,{state:'pilot-verified',evidence:await routerPilot(b.modelID)});}catch(e){return send(502,{state:'blocked-reconcile',error:/^(router-http-[0-9]{3}|router-response-limit|router-response-unverified|router-cost-unverified|free-account-or-model-unverified|free-model-required|candidate outside allowed grammar|acceptance failed)$/.test(e.message)?e.message:e.name==='TimeoutError'?'timeout-ambiguous':'pilot-unverified'});}
+   }
    if(req.method==='GET'&&req.url==='/api/providers'){
     const providers=await providerInspector();return send(200,{providers,recommendedForInspection:recommendInspection(providers),additionalBudget:0,generationEnabled:false});
    }
