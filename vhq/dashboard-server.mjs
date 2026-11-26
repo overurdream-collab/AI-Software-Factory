@@ -1,9 +1,10 @@
 import {createServer} from 'node:http';
 import {readFileSync} from 'node:fs';
 import {timingSafeEqual} from 'node:crypto';
+import {runPilot} from './opencode-pilot.mjs';
 import {prepareInteraction} from './interaction.mjs';
 const html=readFileSync(new URL('./dashboard.html',import.meta.url));
-export function createDashboard({registry,repository,token,expiresAt,clock=Date.now}){
+export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot}){
  if(typeof token!=='string'||token.length<32||!Number.isSafeInteger(expiresAt))throw Error('operator token and expiry required');
  const authorized=req=>{const a=Buffer.from(req.headers.authorization||'');const b=Buffer.from('Bearer '+token);return a.length===b.length&&timingSafeEqual(a,b)&&clock()<expiresAt;};
  const grant=action=>({action,repository,expiresAt});
@@ -14,7 +15,17 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
    if(req.method==='GET'&&req.url==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(html);}
    if(req.method==='GET'&&['/dashboard.js','/dashboard.css'].includes(req.url)){res.writeHead(200,{'Content-Type':req.url.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8'});return res.end(readFileSync(new URL('.'+req.url,import.meta.url)));}
    if(!authorized(req))return send(401,{error:'unauthorized'});
-   if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,additionalBudget:0,providers:'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()})});
+   if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,additionalBudget:0,providers:pilotEnabled?'opencode-pilot-enabled':'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()}).map(a=>({...a,pilot:registry.pilotStatus(a.id)}))});
+   if(req.method==='POST'&&req.url==='/api/pilot'){
+    if(!pilotEnabled)return send(403,{error:'pilot disabled'});
+    if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
+    let n=0,parts=[];for await(const c of req){n+=c.length;if(n>2048)return send(413,{error:'too large'});parts.push(c);}
+    const b=JSON.parse(Buffer.concat(parts).toString());
+    if(typeof b?.id!=='string'||b.confirm!=='synthetic-addition-only')return send(400,{error:'explicit pilot confirmation required'});
+    if(!registry.claimPilot({id:b.id,grant:grant('submit'),repository,now:clock()}))return send(409,{error:'already attempted; reconcile manually'});
+    try{const evidence=await pilotRunner();registry.finishPilot(b.id,'pilot-verified',evidence,clock());return send(200,{state:'pilot-verified',evidence});}
+    catch{registry.finishPilot(b.id,'blocked-reconcile',{reason:'execution or verification failed; no automatic retry'},clock());return send(502,{state:'blocked-reconcile'});}
+   }
    if(req.method==='POST'&&req.url==='/api/intake'){
     if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
     let size=0,parts=[];for await(const c of req){size+=c.length;if(size>16384)return send(413,{error:'too large'});parts.push(c);}
