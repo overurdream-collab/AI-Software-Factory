@@ -1,3 +1,4 @@
+import {readRuntime} from './runtime-monitor.mjs';
 import {readAgentActivity} from './agent-activity.mjs';
 import {createServer} from 'node:http';
 import {readFileSync} from 'node:fs';
@@ -8,7 +9,7 @@ import {getDeepSeekBalance} from './deepseek-direct.mjs';
 import {runPilot} from './opencode-pilot.mjs';
 import {prepareInteraction} from './interaction.mjs';
 const html=readFileSync(new URL('./dashboard.html',import.meta.url));
-export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders,routerPilot=runOpenRouterPilot,agentActivity=readAgentActivity}){
+export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders,routerPilot=runOpenRouterPilot,agentActivity=readAgentActivity,runtimeReader=readRuntime}){
  if(typeof token!=='string'||token.length<32||!Number.isSafeInteger(expiresAt))throw Error('operator token and expiry required');
  const authorized=req=>{const a=Buffer.from(req.headers.authorization||'');const b=Buffer.from('Bearer '+token);return a.length===b.length&&timingSafeEqual(a,b)&&clock()<expiresAt;};
  let routerAttempted=false;
@@ -30,6 +31,7 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
     routerAttempted=true;
     try{return send(200,{state:'pilot-verified',evidence:await routerPilot(b.modelID)});}catch(e){return send(502,{state:'blocked-reconcile',error:/^(router-http-[0-9]{3}|router-response-limit|router-response-unverified|router-cost-unverified|free-account-or-model-unverified|free-model-required|candidate outside allowed grammar|acceptance failed)$/.test(e.message)?e.message:e.name==='TimeoutError'?'timeout-ambiguous':'pilot-unverified'});}
    }
+   if(req.method==='GET'&&req.url==='/api/runtime')return send(200,runtimeReader());
    if(req.method==='GET'&&req.url==='/api/agents/activity')return send(200,await agentActivity());
    if(req.method==='GET'&&req.url==='/api/providers'){
     const providers=await providerInspector();return send(200,{providers,recommendedForInspection:recommendInspection(providers),additionalBudget:0,generationEnabled:false});
