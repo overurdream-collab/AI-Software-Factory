@@ -1,0 +1,49 @@
+name: P3 live workers pilot
+on:
+  push:
+    branches: ['coord/p3-live-workers-v1']
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OLLAMA_NO_CLOUD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare Docker and evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/p3"
+          echo "P3_STATE_DIR=$RUNNER_TEMP/p3" >> "$GITHUB_ENV"
+          docker pull node:22-alpine
+          REF=$(docker image inspect --format '{{index .RepoDigests 0}}' node:22-alpine)
+          echo "P3_IMAGE_DIGEST=${REF#*@}" >> "$GITHUB_ENV"
+      - name: Install pinned local inference runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/ollama"
+          curl -fL --retry 2 --max-time 300 --silent --show-error https://github.com/ollama/ollama/releases/download/v0.40.18/ollama-linux-amd64.tar.zst -o "$RUNNER_TEMP/ollama.tar.zst"
+          echo "b82649006cb5b54ed1237fa2d1a26a7f939a4fd03150033759acbff7ff315adf  $RUNNER_TEMP/ollama.tar.zst" | sha256sum --check
+          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama" --exclude='lib/ollama/cuda*' --exclude='lib/ollama/vulkan*' --exclude='lib/ollama/rocm*'
+          rm "$RUNNER_TEMP/ollama.tar.zst"
+          OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="$RUNNER_TEMP/ollama-models" "$RUNNER_TEMP/ollama/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11434/api/version; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/version
+          "$RUNNER_TEMP/ollama/bin/ollama" pull qwen2.5-coder:1.5b
+      - name: Run two live repair processes
+        run: node scripts/coordinator-p3-live.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p3-live-worker-evidence
+          path: ${{ runner.temp }}/p3/evidence.json
+          retention-days: 14
