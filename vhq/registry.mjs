@@ -10,6 +10,7 @@ export function openRegistry(path) {
   db.exec(`CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, repository TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS assignments(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), fingerprint TEXT NOT NULL, priority INTEGER NOT NULL, payload TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS dependencies(task_id TEXT NOT NULL REFERENCES assignments(id), dependency_id TEXT NOT NULL REFERENCES assignments(id), PRIMARY KEY(task_id,dependency_id));
+  CREATE TABLE IF NOT EXISTS pilot_runs(task_id TEXT PRIMARY KEY REFERENCES assignments(id), state TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER, evidence TEXT);
   CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY, task_id TEXT NOT NULL REFERENCES assignments(id), event TEXT NOT NULL, at INTEGER NOT NULL);
   `);
   function tx(fn){db.exec('BEGIN IMMEDIATE');try{const out=fn();db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;}}
@@ -41,7 +42,24 @@ export function openRegistry(path) {
     if(!authorize(grant,{action:'read',repository,paid:false,production:false},now))throw Error('read denied');
     return db.prepare('SELECT a.payload FROM assignments a JOIN projects p ON p.id=a.project_id WHERE p.repository=? ORDER BY a.priority DESC,a.id').all(repository).map(x=>JSON.parse(x.payload));
   }
-  return {submit,list,close:()=>db.close()};
+  function claimPilot({id,grant,repository,now}){
+    if(!authorize(grant,{action:'submit',repository,paid:false,production:false},now))throw Error('denied');
+    return tx(()=>{const row=db.prepare('SELECT payload FROM assignments WHERE id=?').get(id);
+      const a=row&&JSON.parse(row.payload);
+      if(!a||a.repository!==repository||a.projectId!=='pilot'||a.kind!=='coding'||a.state!=='queued'||a.deps.length)throw Error('pilot only');
+      const prior=db.prepare('SELECT state FROM pilot_runs WHERE task_id=?').get(id);
+      if(prior)return false;
+      db.prepare('INSERT INTO pilot_runs(task_id,state,started) VALUES (?,?,?)').run(id,'running',now);
+      db.prepare('INSERT INTO audit(task_id,event,at) VALUES (?,?,?)').run(id,'pilot-start',now);return true;});
+  }
+  function finishPilot(id,state,evidence,now){
+    if(!['pilot-verified','blocked-reconcile'].includes(state))throw Error('invalid state');
+    return tx(()=>{const result=db.prepare("UPDATE pilot_runs SET state=?,finished=?,evidence=? WHERE task_id=? AND state='running'").run(state,now,JSON.stringify(evidence),id);
+    if(result.changes!==1)throw Error('not running');
+    db.prepare('INSERT INTO audit(task_id,event,at) VALUES (?,?,?)').run(id,state,now);});
+  }
+  function pilotStatus(id){const row=db.prepare('SELECT state,started,finished,evidence FROM pilot_runs WHERE task_id=?').get(id);return row?{...row,evidence:row.evidence?JSON.parse(row.evidence):null}:null;}
+  return {submit,list,claimPilot,finishPilot,pilotStatus,close:()=>db.close()};
 }
 // Registry stores intake decisions only. It never treats ready as running, releases dependencies,
 // or dispatches workers. Those operations require the factory adapter and fresh authorization.
