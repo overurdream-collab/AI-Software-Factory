@@ -2,7 +2,7 @@ name: P2 live factory pilot
 on:
   push:
     branches:
-      - 'coord/p2-live-integration-v*'
+      - 'coord/p2-live-integration-v3'
   workflow_dispatch:
 permissions:
   contents: write
@@ -18,8 +18,8 @@ jobs:
     timeout-minutes: 25
     env:
       OLLAMA_NO_CLOUD: '1'
-      P2_RESUME_RUN_ID: '45544471305'
-      P2_EXPECTED_REPAIR_BASE: '1e2226e5f0bb61842a45df03253a88a72a4638e4'
+      P2_RESUME_RUN_ID: ''
+      P2_EXPECTED_REPAIR_BASE: ''
     steps:
       - name: Initialize durable checkpoint directory
         run: echo "P2_STATE_DIR=$RUNNER_TEMP/factory-p2-state" >> "$GITHUB_ENV"
