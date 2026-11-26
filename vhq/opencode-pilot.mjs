@@ -2,7 +2,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 export const model='opencode/deepseek-v4.1-flash-free';
 // Fixed synthetic prompt only. No user text, project files, credentials or shell interpolation.
-const command="set -eu; d=$(mktemp -d); trap 'rm -rf -- \"$d\"' EXIT; cd \"$d\"; export OPENCODE_CONFIG_CONTENT='{\"permission\":\"deny\"}'; opencode run --model opencode/deepseek-v4.1-flash-free --format json 'Return exactly one line of JavaScript: export function add(a,b){return a+b;} Do not use tools or access files.'";
+const command="set -eu; d=$(mktemp -d); trap 'rm -rf -- \"$d\"' EXIT; cd \"$d\"; export OPENCODE_CONFIG_CONTENT='{\"permission\":\"deny\"}'; opencode run --model opencode/deepseek-v4.1-flash-free --format json 'Write one JavaScript line exporting a function named add with parameters a and b that returns their numeric sum. No explanation. Do not use tools or access files.'";
 export function invokeFreePilot({spawnImpl=spawn,timeoutMs=90000}={}){
  return new Promise((resolve,reject)=>{
   const p=spawnImpl('wsl.exe',['-d','Ubuntu-24.04','-e','bash','-ic',command],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
