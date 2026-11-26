@@ -10,7 +10,7 @@ export function modelChoices(catalog,kind='coding',observations={}){
  const preferred=kind==='coding'?['deepseek-v4.1-flash-free','mimo-v2.6-flash-free']:['mimo-v2.6-flash-free','deepseek-v4.1-flash-free'];
  const rows=Object.entries(models).filter(([id,m])=>freeModel(id,m)).map(([id])=>({id,provider:providerID,price:'zero-catalog',availability:observations[id]||'unverified'}));
  rows.sort((a,b)=>{const rank=x=>x.availability==='verified-response'?0:x.availability==='unverified'?1:2;const pref=x=>preferred.includes(x.id)?preferred.indexOf(x.id):99;return rank(a)-rank(b)||pref(a)-pref(b)||a.id.localeCompare(b.id);});
- return {models:rows,recommended:rows.find(x=>['verified-response','unverified'].includes(x.availability))?.id||null,recommendationBasis:'heuristic; quota not guaranteed'};
+ return {models:rows,recommended:rows.find(x=>x.availability==='verified-response')?.id||null,recommendationBasis:'heuristic; quota not guaranteed'};
 }
 export async function listHttpModels({password=process.env.VHQ_OPENCODE_PASSWORD,fetchImpl=fetch,kind='coding',observations={}}={}){
  if(!password)throw Error('http-auth-missing');
@@ -22,7 +22,7 @@ export async function listHttpModels({password=process.env.VHQ_OPENCODE_PASSWORD
 }
 const deny=[{permission:'*',pattern:'*',action:'deny'}];
 const prompt='Write one JavaScript line exporting a function named add with parameters a and b that returns their numeric sum. No explanation. Do not use tools or access files.';
-export async function runHttpPilot({password=process.env.VHQ_OPENCODE_PASSWORD,fetchImpl=fetch,onStage=()=>{},modelID=defaultModel}={}){
+export async function runHttpPilot({password=process.env.VHQ_OPENCODE_PASSWORD,fetchImpl=fetch,onStage=()=>{},modelID=defaultModel,probe=false}={}){
  if(typeof password!=='string'||!password)throw Error('http-auth-missing');
  const headers={Authorization:'Basic '+Buffer.from('opencode:'+password).toString('base64'),'Content-Type':'application/json'};
  async function call(path,body,ms=15000,scoped=true){
@@ -46,13 +46,15 @@ export async function runHttpPilot({password=process.env.VHQ_OPENCODE_PASSWORD,f
  const path='/session/'+session.id;
  onStage('session-created '+session.id);
  try{
-  const message=await call(path+'/message',{model:{providerID,modelID},tools:Object.fromEntries(ids.map(id=>[id,false])),parts:[{type:'text',text:prompt}]},90000);
+  const message=await call(path+'/message',{model:{providerID,modelID},tools:Object.fromEntries(ids.map(id=>[id,false])),parts:[{type:'text',text:probe?'Reply only with VHQ_READY. Do not use tools or access files.':prompt}]},probe?20000:90000);
+  if(message.info?.error){const err=JSON.stringify(message.info.error);if(/quota|insufficient.credit|free.*limit|usage.limit|billing|rate.limit|429/i.test(err))throw Error('http-quota-or-rate-limit');throw Error('http-provider-error');}
   if(message.info?.sessionID!==session.id||message.info?.role!=='assistant'||message.info?.providerID!==providerID||message.info?.modelID!==modelID||message.info?.cost!==0||message.info?.error||!message.info?.time?.completed||!Array.isArray(message.parts))throw Error('http-message-unverified');
   if(message.parts.some(p=>p.type==='tool'))throw Error('unexpected tool use');
+  if(probe){if(message.parts.filter(p=>p.type==='text').map(p=>p.text).join('').trim()!=='VHQ_READY')throw Error('http-probe-unverified');return {model:providerID+'/'+modelID,sessionId:session.id,reportedCost:0,checkedAt:Date.now()};}
   const evidence=await runPilot(async()=>message.parts.filter(p=>p.type==='text').map(p=>JSON.stringify({type:'text',part:{text:p.text}})).join('\n'));
   return {...evidence,model:providerID+'/'+modelID,transport:'http',sessionId:session.id,reportedCost:0};
  }catch(e){
-  try{await call(path+'/abort',{},10000);}catch{}
+  try{await call(path+'/abort',{},5000);}catch{}
   throw e;
  }
 }
