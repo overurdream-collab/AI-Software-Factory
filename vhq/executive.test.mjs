@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {prepareAssignment,projectSummary} from './executive.mjs';
+const grant={action:'submit',repository:'org/repo',expiresAt:200};
+const request={id:'pilot-1',repository:'org/repo',goal:'Fix fixture',kind:'coding',complexity:'simple',sensitivity:'public',paid:false,production:false};
+const route={id:'open',client:'opencode',enabled:true,verified:true,noChargeEnforced:true,remainingRequests:2,validUntil:200,capabilities:['coding'],billing:'free'};
+const input={grant,request,routes:[route],now:100};
+test('authorized request creates bounded assignment, not execution',()=>{const a=prepareAssignment(input);assert.equal(a.state,'ready');assert.equal(a.department,'software-factory');assert.equal(a.routeId,'open');assert.equal(a.additionalBudgetMicros,0);assert.equal(a.requiresIndependentReview,true);});
+test('missing route queues without claiming progress',()=>assert.equal(prepareAssignment({...input,routes:[]}).state,'queued'));
+test('deny unauthorized or paid or private inputs',()=>{for(const c of [{repository:'other/repo'},{paid:true},{production:true},{sensitivity:'private'},{kind:'__proto__'},{goal:''},{id:'../escape'}])assert.equal(prepareAssignment({...input,request:{...request,...c}}).state,'denied');assert.equal(prepareAssignment({...input,grant:null}).state,'denied');});
+test('summary cannot claim delivery from routing',()=>assert.deepEqual(projectSummary([{state:'ready'},{state:'queued'},{state:'delivered'}]),{total:3,counts:{ready:1,queued:1,denied:0,unknown:1}}));

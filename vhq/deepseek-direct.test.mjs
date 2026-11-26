@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {parseBalance,getDeepSeekBalance} from './deepseek-direct.mjs';
+const info={currency:'USD',total_balance:'0.00',granted_balance:'0.00',topped_up_balance:'0.00'};
+test('insufficient account remains blocked',()=>{const r=parseBalance({is_available:false,balance_infos:[info]});assert.equal(r.state,'insufficient-balance');assert.equal(r.generationEnabled,false);});
+test('granted balance is shown but does not authorize spending',()=>{const r=parseBalance({is_available:true,balance_infos:[{...info,total_balance:'2.00',granted_balance:'2.00'}]});assert.equal(r.state,'grant-present-not-authorized');assert.equal(r.balances[0].granted,'2.00');assert.equal(r.generationEnabled,false);});
+test('paid balance alone does not authorize spending',()=>{assert.equal(parseBalance({is_available:true,balance_infos:[{...info,total_balance:'2.00',topped_up_balance:'2.00'}]}).state,'no-confirmed-grant');});
+test('invalid balances fail closed',()=>{assert.throws(()=>parseBalance({is_available:true,balance_infos:[{...info,granted_balance:'NaN'}]}),/balance-invalid/);});
+test('missing key never calls provider',async()=>{const r=await getDeepSeekBalance({key:'',fetchImpl:()=>{throw Error('must not call')}});assert.equal(r.state,'key-missing');});
+test('only balance endpoint called with bearer authentication',async()=>{const r=await getDeepSeekBalance({key:'test-only',fetchImpl:async(url,opts)=>{assert.equal(url,'https://api.deepseek.com/user/balance');assert.equal(opts.headers.Authorization,'Bearer test-only');assert.equal(opts.redirect,'error');assert.equal(opts.method,undefined);return new Response(JSON.stringify({is_available:false,balance_infos:[info]}));}});assert.equal(r.generationEnabled,false);});
+test('HTTP failure does not reveal provider response body',async()=>{await assert.rejects(getDeepSeekBalance({key:'test-only',fetchImpl:async()=>new Response('secret', {status:401})}),/balance-http-401/);});

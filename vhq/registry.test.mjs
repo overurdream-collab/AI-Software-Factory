@@ -1,0 +1,14 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {openRegistry} from './registry.mjs';
+const repository='org/repo',now=100;
+const grant={action:'submit',repository,expiresAt:200};
+const read={grant:{...grant,action:'read'},repository,now};
+const request={id:'one',repository,goal:'Fixture',kind:'coding',complexity:'simple',sensitivity:'public',paid:false,production:false};
+const input={projectId:'p',request,grant,routes:[],now};
+test('durable reopen, idempotent intake and conflict',()=>{const dir=mkdtempSync(join(tmpdir(),'vhq-'));let db;try{db=openRegistry(join(dir,'db'));const a=db.submit(input);assert.equal(a.state,'queued');db.close();db=openRegistry(join(dir,'db'));assert.deepEqual(db.submit(input),a);assert.equal(db.list(read).length,1);assert.throws(()=>db.submit({...input,request:{...request,goal:'changed'}}),/conflict/);}finally{db?.close();rmSync(dir,{recursive:true,force:true});}});
+test('dependencies and priorities; reject foreign or missing dependencies',()=>{const db=openRegistry(':memory:');try{db.submit(input);const two={...input,request:{...request,id:'two'},priority:80,deps:['one']};db.submit(two);assert.equal(db.list(read)[0].id,'two');assert.throws(()=>db.submit({...two,request:{...request,id:'three'},deps:['missing']}));assert.throws(()=>db.submit({...two,projectId:'other',request:{...request,id:'four'}}));assert.equal(db.list(read).length,2);}finally{db.close();}});
+test('authorization on intake and reads',()=>{const db=openRegistry(':memory:');try{assert.equal(db.submit({...input,grant:null}).state,'denied');assert.throws(()=>db.list({...read,grant:null}));assert.equal(db.list(read).length,0);}finally{db.close();}});

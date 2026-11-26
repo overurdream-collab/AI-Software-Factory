@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {selectRoutes,planRoute,routeOutcome} from './router.mjs';
+const now=100, task={kind:'coding',complexity:'complex',sensitivity:'public'};
+const base={id:'open',client:'opencode',enabled:true,verified:true,noChargeEnforced:true,remainingRequests:2,validUntil:200,capabilities:['coding','analysis'],billing:'free'};
+const codex={...base,id:'cx',client:'codex',billing:'included'};
+test('complex coding prefers codex; simple prefers opencode',()=>{assert.equal(planRoute([base,codex],task,now).routeId,'cx');assert.equal(planRoute([codex,base],{...task,complexity:'simple'},now).routeId,'open');});
+test('reject unverified, unknown or paid billing and missing hard cap',()=>{for(const c of [{verified:false},{billing:'paid'},{billing:undefined},{noChargeEnforced:false},{enabled:false}])assert.equal(selectRoutes([{...base,...c}],task,now).length,0);});
+test('expired quota, cooldown and stale catalog queue tasks',()=>{for(const c of [{remainingRequests:0},{validUntil:100},{cooldownUntil:101}])assert.equal(planRoute([{...base,...c}],task,now).state,'queued');});
+test('trial credits require verified balance and expiry',()=>{const t={...base,billing:'trial',creditExpiresAt:200,creditRemainingMicros:50};assert.equal(selectRoutes([t],task,now).length,1);assert.equal(selectRoutes([{...t,creditRemainingMicros:0}],task,now).length,0);assert.equal(selectRoutes([{...t,creditExpiresAt:100}],task,now).length,0);});
+test('confidential or unknown sensitivity denied',()=>{for(const s of ['private',undefined])assert.equal(selectRoutes([base],{...task,sensitivity:s},now).length,0);});
+test('fallback only after confirmed non-execution',()=>{assert.equal(routeOutcome({kind:'quota',executionStarted:false}),'rotate');assert.equal(routeOutcome({kind:'quota'}),'blocked-reconcile');assert.equal(routeOutcome({kind:'timeout'}),'blocked-reconcile');assert.equal(routeOutcome({kind:'success'}),'awaiting-independent-review');});
+test('fallback candidate when preferred route exhausted',()=>assert.equal(planRoute([{...codex,remainingRequests:0},base],task,now).routeId,'open'));

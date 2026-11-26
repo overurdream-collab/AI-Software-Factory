@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {modelChoices} from './opencode-http.mjs';
+const cost={input:0,output:0,cache:{read:0,write:0}};
+const model=(id,c=cost)=>({id,providerID:'opencode',cost:c});
+const deep='deepseek-v4.1-flash-free',mimo='mimo-v2.6-flash-free';
+const catalog={providers:[{id:'opencode',models:{[deep]:model(deep),[mimo]:model(mimo),'paid-free':model('paid-free',{...cost,output:1}),'big-pickle':model('big-pickle'),'unknown-free':model('unknown-free',{})}}]};
+test('only explicitly free zero-priced models are listed',()=>{const result=modelChoices(catalog);assert.deepEqual(result.models.map(x=>x.id),[deep,mimo]);assert.equal(result.recommended,null);assert.equal(result.models[0].availability,'unverified');});
+test('reported quota excludes a model from recommendation',()=>{const result=modelChoices(catalog,'coding',{[deep]:'quota-reported'});assert.equal(result.recommended,null);assert.equal(result.models[1].availability,'quota-reported');});
+test('all blocked means no recommendation',()=>{assert.equal(modelChoices(catalog,'coding',{[deep]:'quota-reported',[mimo]:'attempt-blocked'}).recommended,null);});
+test('observed successful model outranks heuristic',()=>{assert.equal(modelChoices(catalog,'coding',{[mimo]:'verified-response'}).recommended,mimo);});
