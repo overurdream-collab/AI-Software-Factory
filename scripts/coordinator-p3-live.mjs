@@ -6,7 +6,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {SQLiteStore} from '../src/sqlite-store.mjs';
 import {enqueueSpec} from '../src/attempt-store.mjs';
-import {claim,submit} from '../src/leases.mjs';
+import {claim,submit,failExecution} from '../src/leases.mjs';
 import {withHeartbeat} from '../src/heartbeat.mjs';
 import {executeLiveRepository} from '../src/repository-worker.mjs';
 import {git} from '../src/workspace.mjs';
@@ -17,8 +17,8 @@ const imageDigest=process.env.P3_IMAGE_DIGEST;
 const model='qwen2.5-coder:1.5b';
 const store=new SQLiteStore(db);
 const specs=[
- ['clamp','fixtures/p2-clamp/clamp.mjs','fixtures/p2-clamp/checks.mjs','Fix clamp to enforce both lower and upper bounds; preserve named export.'],
- ['sum','fixtures/p3-sum/sum.mjs','fixtures/p3-sum/checks.mjs','Fix sum(values) to add every numeric array element and return zero for empty arrays; preserve named export.']
+ ['clamp','fixtures/p2-clamp/clamp.mjs','fixtures/p2-clamp/checks.mjs','The current clamp implementation ignores the lower bound. Fix clamp(value, lower, upper) to enforce BOTH bounds: return lower below the lower bound, upper above the upper bound, and the original value inside the interval. Preserve the named ES module export clamp.'],
+ ['sum','fixtures/p3-sum/sum.mjs','fixtures/p3-sum/checks.mjs','The current sum implementation omits an array element. Fix sum(values) so every numeric element contributes exactly once, including the first and last; return zero for an empty array. Preserve the named ES module export sum.']
 ];
 try{
  if(process.argv[2]==='worker'){
@@ -28,11 +28,13 @@ try{
   const spec=await store.transact(s=>s.specs[task.id]);
   const row=specs.find(x=>x[0]===task.id);
   const work=join(root,owner);await mkdir(work,{recursive:true});
+  try {
   const artifact=await withHeartbeat({store,task,owner,clock:Date.now,ttl:15000,deadlineMs:300000,
    operation:(_task,signal)=>executeLiveRepository({spec,attemptId:task.attemptId,leaseToken:task.token,owner,store,repositoryPath:resolve('.'),root:work,
     testPlan:{id:spec.testPlanId,commands:[{argv:['node','--test','--test-reporter=tap',row[2]],cwd:'.'}]},
     runnerLimits:{timeoutMs:60000,memoryMb:256,cpus:1,pids:64,maxOutputBytes:262144},imageDigest,providerConfig:{model,timeoutMs:180000},approvedRepositories:[repository],signal})});
   await store.transact(s=>submit(s,task.id,task.token,artifact,Date.now()));
+  } catch(error) { await store.transact(s=>failExecution(s,task.id,task.token,Date.now())); throw error; }
  }else{
   const baseCommit=(await git(resolve('.'),['rev-parse','HEAD'])).trim();
   const metadata=await (await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(5000)})).json();
@@ -73,6 +75,10 @@ try{
    assert.ok(evidence.attempts.some(x=>x.attemptId===old.attemptId&&x.state==='expired'));
    assert.notEqual(JSON.parse(evidence.tasks[0].artifact).patchSha256,JSON.parse(evidence.tasks[1].artifact).patchSha256);
    await writeFile(join(root,'evidence.json'),JSON.stringify({baseCommit,imageDigest,model,digest,results,killAt,cleaned,staleRejected:true,...evidence},null,2));
+  }catch(error){
+   const snapshot=await store.transact(s=>({tasks:s.tasks.map(({id,state,attempts,attemptId,failure})=>({id,state,attempts,attemptId,failure})),attempts:(s.attempts??[]).map(({token,...a})=>a),resources:(s.resources??[]).map(({leaseToken,...r})=>r)}));
+   await writeFile(join(root,'evidence.json'),JSON.stringify({passed:false,baseCommit,imageDigest,model,digest,results,killAt,cleaned,error:error.name,...snapshot},null,2));
+   throw error;
   }finally{
    for(const x of [a,b])if(x.p.exitCode===null&&x.p.signalCode===null)x.p.kill('SIGKILL');
   }

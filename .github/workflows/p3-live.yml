@@ -1,7 +1,7 @@
 name: P3 live workers pilot
 on:
   push:
-    branches: ['coord/p3-live-workers-v1', 'coord/p3-live-crash-v1']
+    branches: ['coord/p3-live-workers-v1', 'coord/p3-live-crash-v1', 'coord/p3-live-crash-v2']
 permissions:
   contents: read
 jobs:
