@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtempSync,rmSync,existsSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {projectRuntime,readRuntime} from './runtime-monitor.mjs';
+const fixture={version:1,tasks:[{id:'a',state:'running',role:'dev',worker:'worker-1',expiresAt:200,attempts:1,token:'secret',artifact:'private'},{id:'b',state:'running',worker:'worker-2',expiresAt:100,attempts:2},{id:'c',state:'review',reviewOwner:'reviewer',reviewExpiresAt:300,reviewToken:'secret2'},{id:'d',state:'queued'},{id:'e',state:'accepted'}]};
+test('projects real states and distinguishes expired leases',()=>{const r=projectRuntime(fixture,100);assert.equal(r.counts.running,2);assert.equal(r.counts.expired,1);assert.equal(r.counts.unexpired,2);assert.equal(r.heartbeatTimestampAvailable,false);assert.equal(r.tasks[1].lease,'expired');assert.equal(r.tasks[2].owner,'reviewer');assert.ok(!JSON.stringify(r).includes('secret'));assert.ok(!JSON.stringify(r).includes('private'));});
+test('missing configuration does not create database',()=>{assert.equal(readRuntime({path:''}).state,'not-configured');});
+test('opens existing state read-only and never creates missing database',()=>{const dir=mkdtempSync(join(tmpdir(),'vhq-runtime-'));try{const path=join(dir,'factory.sqlite');const db=new DatabaseSync(path);db.exec('CREATE TABLE factory_state(id INTEGER PRIMARY KEY,payload TEXT)');db.prepare('INSERT INTO factory_state VALUES(1,?)').run(JSON.stringify(fixture));db.close();assert.equal(readRuntime({path,clock:()=>100}).state,'snapshot');const absent=join(dir,'absent.sqlite');assert.equal(readRuntime({path:absent}).state,'unavailable');assert.equal(existsSync(absent),false);}finally{rmSync(dir,{recursive:true,force:true});}});
+test('unsupported state fails closed',()=>{assert.throws(()=>projectRuntime({version:2,tasks:[]}),/unsupported-state/);});
