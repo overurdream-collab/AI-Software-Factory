@@ -14,3 +14,6 @@ Default deny. Owner grants scoped repository/action/budget/expiry approval. No c
 ## Local policy tests
 node --test vhq/policy.test.mjs
 The initial policy is an in-process prototype, not authentication, persistence or a live adapter. No external action is performed.
+
+## Owner decision — 2026-11-26: validation-first providers
+Use Codex within existing subscription allowance for coding and tests. DeepSeek free chat may assist manual analysis of sanitized non-sensitive inputs; it is not an authenticated automated API. Enable a DeepSeek API adapter only with verified free credits or explicitly approved funding. Default additional spend: USD 0. No automatic paid fallback, purchased credits, or paid hosting. On quota exhaustion persist task and mark blocked/queued; never bypass service limits. Provider routing must be replaceable; keep secrets outside logs and repositories. Validate actual Codex dispatch and model access before declaring autonomous operation. Add providers only against measured bottlenecks and owner-approved budgets. This decision applies to VHQ; coordinated factory implementation files remain untouched.
