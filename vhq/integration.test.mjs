@@ -1,0 +1,16 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {prepareFactoryDispatch} from './factory-adapter.mjs';
+import {prepareInteraction} from './interaction.mjs';
+const repository='org/repo',now=100;
+const assignment={id:'pilot',projectId:'p',kind:'coding',complexity:'simple',sensitivity:'public',goal:'Fix fixture',repository,state:'queued',additionalBudgetMicros:0,deps:[]};
+const grant={action:'submit',repository,expiresAt:200};
+const profile={repository,baseCommit:'a'.repeat(40),allowedPaths:['src/app.mjs'],testPlanId:'pilot',limits:{maxAttempts:2,maxReviewAttempts:2,deadlineMs:10000,maxPatchBytes:65536}};
+const routes=[{id:'free',client:'opencode',enabled:true,verified:true,noChargeEnforced:true,remainingRequests:2,validUntil:200,capabilities:['coding'],billing:'free'}];
+const input={assignment,grant,profile,routes,now};
+test('dispatch plan maps trusted factory spec without executing',()=>{const d=prepareFactoryDispatch(input);assert.equal(d.state,'dispatch-planned');assert.equal(d.spec.role,'dev');assert.equal(d.spec.baseCommit,profile.baseCommit);assert.equal(d.dispatchKey,prepareFactoryDispatch(input).dispatchKey);});
+test('deny expired authorization and invalid profiles',()=>{assert.equal(prepareFactoryDispatch({...input,now:200}).state,'denied');for(const allowedPaths of [['../escape'],['.git/config'],['/abs']])assert.equal(prepareFactoryDispatch({...input,profile:{...profile,allowedPaths}}).state,'blocked');});
+test('dependencies must be delivered with matching evidence',()=>{const a={...assignment,deps:['prior']};assert.equal(prepareFactoryDispatch({...input,assignment:a}).reason,'dependencies');const d={id:'prior',projectId:'p',accepted:true,delivery:'delivered',commit:'b'.repeat(40),checkedCommit:'b'.repeat(40),independentEvidence:true};assert.equal(prepareFactoryDispatch({...input,assignment:a,dependencies:[d]}).state,'dispatch-planned');});
+test('no free route means queue',()=>assert.equal(prepareFactoryDispatch({...input,routes:[]}).state,'queued'));
+test('voice requires confirmation of exact transcript',()=>{const a=prepareInteraction({channel:'voice',text:'أصلح الخطأ'});assert.equal(a.state,'awaiting-confirmation');assert.equal(prepareInteraction({channel:'voice',text:a.text,confirmedDigest:a.digest}).state,'confirmed-input');assert.equal(prepareInteraction({channel:'voice',text:'غير الهدف',confirmedDigest:a.digest}).state,'awaiting-confirmation');});
+test('text input and invalid channel',()=>{assert.equal(prepareInteraction({channel:'text',text:'اختبار'}).state,'confirmed-input');assert.equal(prepareInteraction({channel:'audio',text:'x'}).state,'invalid');});
