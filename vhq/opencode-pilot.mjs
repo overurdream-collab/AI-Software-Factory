@@ -2,16 +2,16 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 export const model='opencode/deepseek-v4.1-flash-free';
 // Fixed synthetic prompt only. No user text, project files, credentials or shell interpolation.
-const command="set -eu; d=$(mktemp -d); trap 'rm -rf -- \"$d\"' EXIT; cd \"$d\"; export OPENCODE_CONFIG_CONTENT='{\"permission\":\"deny\"}'; opencode run --model opencode/deepseek-v4.1-flash-free --format json 'Write one JavaScript line exporting a function named add with parameters a and b that returns their numeric sum. No explanation. Do not use tools or access files.'";
-export function invokeFreePilot({spawnImpl=spawn,timeoutMs=90000}={}){
+const command="set -eu; d=$(mktemp -d); trap 'rm -rf -- \"$d\"' EXIT; cd \"$d\"; export OPENCODE_CONFIG_CONTENT='{\"permission\":\"deny\"}'; timeout --kill-after=10s 280s opencode run --model opencode/deepseek-v4.1-flash-free --format json 'Write one JavaScript line exporting a function named add with parameters a and b that returns their numeric sum. No explanation. Do not use tools or access files.'";
+export function invokeFreePilot({spawnImpl=spawn,timeoutMs=300000,onProgress=()=>{}}={}){
  return new Promise((resolve,reject)=>{
   const p=spawnImpl('wsl.exe',['-d','Ubuntu-24.04','-e','bash','-ic',command],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
-  let out='',size=0,done=false;
-  const finish=(err,value)=>{if(done)return;done=true;clearTimeout(timer);err?reject(err):resolve(value);};
+  let out='',size=0,done=false; const started=Date.now(); const report=()=>{try{onProgress({elapsedMs:Date.now()-started,receivedBytes:size});}catch{}}; const heartbeat=setInterval(report,5000);
+  const finish=(err,value)=>{if(done)return;done=true;clearTimeout(timer);clearInterval(heartbeat);report();err?reject(err):resolve(value);};
   const timer=setTimeout(()=>{p.kill();finish(Error('timeout-ambiguous'));},timeoutMs);
-  for(const [stream,isOut] of [[p.stdout,true],[p.stderr,false]])stream.on('data',c=>{size+=c.length;if(size>65536){p.kill();finish(Error('output-limit-ambiguous'));}else if(isOut)out+=c.toString();});
+  for(const [stream,isOut] of [[p.stdout,true],[p.stderr,false]])stream.on('data',c=>{size+=c.length;if(size>65536){p.kill();finish(Error('output-limit-ambiguous'));}else if(isOut)out+=c.toString();report();});
   p.on('error',()=>finish(Error('launch-failed')));
-  p.on('close',code=>{if(code!==0)return finish(Error('provider-failed'));finish(null,out);});
+  p.on('close',code=>{if(code===124||code===137)return finish(Error('timeout-ambiguous'));if(code!==0)return finish(Error('provider-failed'));finish(null,out);});
  });
 }
 export function verifyPilot(raw){
