@@ -1,2 +1,1 @@
-// Deliberately defective disposable fixture, never an application dependency.
-export const clamp = (value, lower, upper) => Math.min(upper, value);
+export const clamp = (value, lower, upper) => Math.min(upper, Math.max(lower, value));
