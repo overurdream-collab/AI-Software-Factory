@@ -31,7 +31,7 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
     routerAttempted=true;
     try{return send(200,{state:'pilot-verified',evidence:await routerPilot(b.modelID)});}catch(e){return send(502,{state:'blocked-reconcile',error:/^(router-http-[0-9]{3}|router-response-limit|router-response-unverified|router-cost-unverified|free-account-or-model-unverified|free-model-required|candidate outside allowed grammar|acceptance failed)$/.test(e.message)?e.message:e.name==='TimeoutError'?'timeout-ambiguous':'pilot-unverified'});}
    }
-   if(req.method==='GET'&&req.url==='/api/runtime')return send(200,runtimeReader());
+   if(req.method==='GET'&&req.url==='/api/runtime')return send(200,await runtimeReader());
    if(req.method==='GET'&&req.url==='/api/agents/activity')return send(200,await agentActivity());
    if(req.method==='GET'&&req.url==='/api/providers'){
     const providers=await providerInspector();return send(200,{providers,recommendedForInspection:recommendInspection(providers),additionalBudget:0,generationEnabled:false});
