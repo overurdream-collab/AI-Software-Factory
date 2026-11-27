@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 // Trusted local operator boundary. No HTTP exposure or production activation.
 export function createTaskIntake({store,enqueueSpec,policy,clock=Date.now}){
  if(!store||typeof store.transact!=='function'||typeof enqueueSpec!=='function')throw Error('intake dependencies required');
@@ -11,6 +12,13 @@ export function createTaskIntake({store,enqueueSpec,policy,clock=Date.now}){
   const spec={version:1,id:request.id,role:'dev',goal:request.goal,deps:[],repository:p.repository,baseCommit:p.baseCommit,allowedPaths:[...new Set(request.allowedPaths)].sort(),testPlanId:p.testPlanId,limits:Object.fromEntries(['maxAttempts','maxReviewAttempts','deadlineMs','maxPatchBytes'].map(k=>[k,p.limits[k]]))};
   return store.transact(state=>{
    if(clock()>=p.expiresAt)throw Error('operator authorization expired');
+   // JSONB can reorder object keys, including nested limits. Compare values, not serialization order.
+   const matches=state.tasks.filter(t=>t.id===spec.id);
+   if(Object.hasOwn(state.specs??{},spec.id)){
+    if(!isDeepStrictEqual(state.specs[spec.id],spec)||matches.length!==1||matches[0].role!==spec.role||matches[0].goal!==spec.goal||!isDeepStrictEqual(matches[0].deps??[],spec.deps))throw Error('conflicting spec');
+    return {id:spec.id,state:matches[0].state,disposition:'existing'};
+   }
+   if(matches.length)throw Error('conflicting spec: task without specification');
    const added=enqueueSpec(state,spec);
    return {id:spec.id,state:state.tasks.find(t=>t.id===spec.id).state,disposition:added?'created':'existing'};
   });
