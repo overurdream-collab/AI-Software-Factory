@@ -1,12 +1,14 @@
 name: P3 pinned evidence replay
 on:
-  push:
+  pull_request:
     branches: ['coord/p3-evidence-replay-v1']
+    paths: ['.github/workflows/p3-replay.yml', 'scripts/coordinator-p3-replay.mjs', 'test/coordinator-p3-replay.test.mjs']
 permissions:
   contents: read
   actions: read
 jobs:
   replay:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'coord/p3-replay-ci-v2'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,9 +31,11 @@ jobs:
           FILE="$RUNNER_TEMP/p3-original/evidence.json"
           IMAGE=$(node -e 'const e=require(process.argv[1]);if(!/^sha256:[a-f0-9]{64}$/.test(e.imageDigest))process.exit(1);console.log(e.imageDigest)' "$FILE")
           docker pull "node@$IMAGE"
-          node scripts/coordinator-p3-replay.mjs "$FILE" > "$RUNNER_TEMP/replay.json"
+          node scripts/coordinator-p3-replay.mjs "$FILE" > "$RUNNER_TEMP/replay.json" 2> "$RUNNER_TEMP/replay.stderr"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: p3-coordinator-replay
-          path: ${{ runner.temp }}/replay.json
+          path: |
+            ${{ runner.temp }}/replay.json
+            ${{ runner.temp }}/replay.stderr
