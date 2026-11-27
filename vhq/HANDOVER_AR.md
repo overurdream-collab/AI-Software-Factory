@@ -98,3 +98,10 @@ node -e "const {Client}=require('pg');const c=new Client({connectionTimeoutMilli
 - بعدها adapter مدخل VHQ→TaskSpec مصرح، تحديد repo/commit/allowedPaths/testPlan/limits من المشغل، تثبيت عقد إصدار، نقل تكليف واحد من المقر دون فقد أو تكرار، لا إرسال بيانات خاصة. اختبار نموذج مجاني حي، B/E تنفيذ، F اختبار أحمر قبل/أخضر بعد، C PR، F تحقق commit/tree/CI، إظهار أدلة في VHQ. لا تعتبر accepted=delivered.
 ## 11. معيار إغلاق المرحلة
 القاعدة تعمل والقيود والتزامن مثبتان. الصلاحيات واتصال pg مؤكدان لفظياً فقط؛ يطلب دليل منقح عند استئناف العمل. لا يوجد adapter PostgreSQL فعلي في VHQ بعد، ولا ترحيل ولا ربط مصنع حي. لا قاعدة سحابية، لا تشغيل مستقل بعد إغلاق الجهاز. لا اعتماد إنتاجي أو ادعاء تطابق بصري. كل تقدم لاحق يسجل في هذه الوثيقة مع SHA ونتيجة الاختبار والعائق والملفات المتغيرة. لا تعد للخلف إلا عند فشل دليل محدد.
+
+## 12. استئناف 2026-11-27 — موصل القراءة منفذ، القبول معلق
+- d5484fc: vhq/postgres-runtime.mjs، قراءة محدودة 8 MiB، revision نصي، إسقاط الأسرار، Pool بحد 2، مهلات، جلسات read-only، محلي factory_app فقط، لا fallback صامت.
+- 31d22bf: await runtimeReader() في API.
+- a8c20ac: اختيار VHQ_RUNTIME_BACKEND=postgres وإغلاق pool؛ SQLite intake محفوظ.
+- 7cc0daa: أربعة اختبارات mock واختبار حي opt-in؛ لم تُنفذ بعد على جهاز المالك. لا اعتماد للربط قبل نتائج فعلية. pg مثبت حسب إفادة المالك فقط، لا package manifest/lockfile مرفوعين بعد.
+- الاستئناف: git pull origin feat/vhq-enterprise-ui (لا git add .)، تحقق من pg، اضبط متغيرات PG كما في القسم 9، ثم $env:VHQ_TEST_POSTGRES='1'؛ node --test vhq/postgres-runtime.test.mjs. بعد نجاحه $env:VHQ_RUNTIME_BACKEND='postgres'؛ node vhq/start-dashboard.mjs، تحقق من API /api/runtime باستخدام رمز المشغل دون مشاركته. المطلوب snapshot ومصدر postgresql:factory.factory_state وrevision مطابق لـ SQL. لا تكتب أي بيانات ولا تنقل SQLite الآن. الخطوة اللاحقة بعد القبول: موصل كتابة منسق مع D. لا تعديل UI أو A–F في هذه الدورة.
