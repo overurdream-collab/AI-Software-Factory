@@ -9,7 +9,7 @@ import {getDeepSeekBalance} from './deepseek-direct.mjs';
 import {runPilot} from './opencode-pilot.mjs';
 import {prepareInteraction} from './interaction.mjs';
 const html=readFileSync(new URL('./dashboard.html',import.meta.url));
-export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders,routerPilot=runOpenRouterPilot,agentActivity=readAgentActivity,runtimeReader=readRuntime}){
+export function createDashboard({registry,repository,token,expiresAt,clock=Date.now,pilotEnabled=false,pilotRunner=runPilot,modelLister=null,probeModel=null,deepseekBalance=getDeepSeekBalance,providerInspector=inspectProviders,routerPilot=runOpenRouterPilot,agentActivity=readAgentActivity,runtimeReader=readRuntime,testIntake=null}){
  if(typeof token!=='string'||token.length<32||!Number.isSafeInteger(expiresAt))throw Error('operator token and expiry required');
  const authorized=req=>{const a=Buffer.from(req.headers.authorization||'');const b=Buffer.from('Bearer '+token);return a.length===b.length&&timingSafeEqual(a,b)&&clock()<expiresAt;};
  let routerAttempted=false;
@@ -21,7 +21,7 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
    if(req.method==='GET'&&req.url==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(html);}
    if(req.method==='GET'&&['/dashboard.js','/dashboard.css'].includes(req.url)){res.writeHead(200,{'Content-Type':req.url.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8'});return res.end(readFileSync(new URL('.'+req.url,import.meta.url)));}
    if(!authorized(req))return send(401,{error:'unauthorized'});
-   if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,additionalBudget:0,providers:pilotEnabled?'opencode-pilot-enabled':'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()}).map(a=>({...a,pilot:registry.pilotStatus(a.id)}))});
+   if(req.method==='GET'&&req.url==='/api/status')return send(200,{repository,testIntakeEnabled:!!testIntake,additionalBudget:0,providers:pilotEnabled?'opencode-pilot-enabled':'not-connected',assignments:registry.list({grant:grant('read'),repository,now:clock()}).map(a=>({...a,pilot:registry.pilotStatus(a.id)}))});
    if(req.method==='POST'&&req.url==='/api/openrouter/pilot'){
     if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
     let size=0,parts=[];for await(const c of req){size+=c.length;if(size>2048)return send(413,{error:'too large'});parts.push(c);}
@@ -69,6 +69,14 @@ export function createDashboard({registry,repository,token,expiresAt,clock=Date.
     if(!registry.claimPilot({id:b.id,grant:grant('submit'),repository,now:clock()}))return send(409,{error:'already attempted; reconcile manually'});
     try{const evidence=await pilotRunner(b.modelID);registry.finishPilot(b.id,'pilot-verified',evidence,clock());return send(200,{state:'pilot-verified',evidence});}
     catch(e){const allowed=['timeout-ambiguous','output-limit-ambiguous','launch-failed','provider-failed','invalid output','invalid provider event','provider error','unexpected tool use','candidate outside allowed grammar','acceptance failed'];const reason=e?.name==='TimeoutError'?'timeout-ambiguous':(allowed.includes(e?.message)||/^http-(?:auth-missing|health-version|price-not-zero|tool-catalog|session-policy|message-unverified|response-limit|status-[0-9]{3})$/.test(e?.message))?e.message:'unknown-pilot-error';registry.finishPilot(b.id,'blocked-reconcile',{reason},clock());console.error('VHQ pilot:',reason);return send(502,{state:'blocked-reconcile',error:reason});}
+   }
+   if(req.method==='POST'&&req.url==='/api/test-intake'){
+    if(!testIntake)return send(403,{error:'isolated intake disabled'});
+    if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
+    let size=0,parts=[];for await(const c of req){size+=c.length;if(size>16384)return send(413,{error:'too large'});parts.push(c);}
+    let b;try{b=JSON.parse(Buffer.concat(parts).toString());}catch{return send(400,{error:'invalid json'});}
+    if(!b||Object.keys(b).some(k=>!['id','confirm'].includes(k))||b.confirm!=='isolated-synthetic-task'||typeof b.id!=='string'||!/^vhq-test-[a-f0-9-]{36}$/.test(b.id))return send(400,{error:'explicit isolated task required'});
+    try{return send(200,{...await testIntake({id:b.id,goal:'Synthetic dashboard intake verification'}),database:'factory_test_db',testOnly:true});}catch{return send(409,{error:'intake rejected or outcome uncertain; reconcile same id'});}
    }
    if(req.method==='POST'&&req.url==='/api/intake'){
     if(req.headers['content-type']!=='application/json')return send(415,{error:'json required'});
